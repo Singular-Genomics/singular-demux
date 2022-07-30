@@ -1,0 +1,57 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - "*"
+
+jobs:
+  publish:
+    name: Publish for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: singular-demux
+            asset_name: singular-demux-linux-amd64
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Get the version
+        id: get_version
+        run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
+
+      - name: Build
+        shell: bash
+        run: |
+          cargo build --release --locked
+
+      - name: Build archive
+        shell: bash
+        run: |
+          staging="${{matrix.asset_name}}-src"
+          mkdir -p "$staging"
+
+          cp README.md "$staging/"
+          cp LICENSE "$staging/"
+          cp {build.rs,Cargo.toml,Cargo.lock} "$staging/"
+          cp -R ./src "./$staging/src"
+
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            7z a "${staging}.zip" "$staging"
+            echo "ASSET=${staging}.zip" >> $GITHUB_ENV
+          else
+            tar czf "${staging}.tar.gz" "${staging}"
+            echo "ASSET=${staging}.tar.gz" >> $GITHUB_ENV
+          fi
+
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: target/release/${{ matrix.artifact_name }}
+          asset_name: ${{ matrix.asset_name }}_${{ steps.getversion.outputs.VERSION }}
+          tag: ${{ github.ref }}
+      
