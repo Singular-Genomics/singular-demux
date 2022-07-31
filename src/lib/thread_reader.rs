@@ -1,6 +1,6 @@
 //! A [`ThreadReader`] allows for pushing the reading of a compressed FASTQ file onto a separate thread.
 //!
-//! This will spun up pooled decompressor with a defa&&ult of 4 threads for decompression and will also
+//! This will spun up pooled decompressor with a default of 4 threads for decompression and will also
 //! do some initial parsing of the FASTQ file into N sized chunks of FASTQ records.
 
 use std::{fs::File, io::BufReader, num::NonZeroUsize, path::PathBuf, thread::JoinHandle};
@@ -70,7 +70,7 @@ impl ThreadReader {
                                 let message = format!(
                                     "
 Error reading from: {}
-Hint: is the input FASTQ a valid BGZF (Blocked GNU Zipped Format)?
+Hint: is the input FASTQ a valid BGZF (Blocked GNU Zipped Format) and not GZIP?
 Try re-compressing with bgzip (install with conda install -c bioconda htslib):
     bgzip -d {} | bgzip --stdout --threads {} > {}.bgz",
                                     filename, filename, decompression_threads_per_reader, filename,
