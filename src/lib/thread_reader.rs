@@ -55,8 +55,8 @@ impl ThreadReader {
                 BUFSIZE,
             );
 
-            // Developer note: read in the first record set so we can ensure that the input file
-            // is  block-compressed
+            // Developer note: read in the first record set so that a well-formatted message is
+            // given when the input file is not BGZF.
             let mut record_set = RecordSet::default();
             let mut filled_set = reader
                 .read_record_set_exact(&mut record_set, usize::from(chunksize))
