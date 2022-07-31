@@ -60,26 +60,25 @@ impl ThreadReader {
             let mut record_set = RecordSet::default();
             let mut filled_set = reader
                 .read_record_set_exact(&mut record_set, usize::from(chunksize))
-                .map_err(|e1| {
-                    if let seq_io::fastq::ErrorKind::Io(e2) = e1.kind() {
-                        if std::io::ErrorKind::Other == e2.kind() {
-                            if let Some(gzp::GzpError::InvalidHeader(_)) =
-                                e2.get_ref().and_then(|i| i.downcast_ref::<gzp::GzpError>())
-                            {
-                                let filename = file.to_string_lossy();
-                                let message = format!(
-                                    "
+                .map_err(|outer_error| {
+                    if let seq_io::fastq::ErrorKind::Io(inner_error) = outer_error.kind() {
+                        // This implies the inner_error is of kind `std::io::ErrorKind::Other`
+                        if let Some(gzp::GzpError::InvalidHeader(_)) =
+                            inner_error.get_ref().and_then(|i| i.downcast_ref::<gzp::GzpError>())
+                        {
+                            let filename = file.to_string_lossy();
+                            let message = format!(
+                                "
 Error reading from: {}
 Hint: is the input FASTQ a valid BGZF (Blocked GNU Zipped Format) and not GZIP?
 Try re-compressing with bgzip (install with conda install -c bioconda htslib):
     bgzip -d {} | bgzip --stdout --threads {} > {}.bgz",
-                                    filename, filename, decompression_threads_per_reader, filename,
-                                );
-                                return anyhow!(message).context(e1);
-                            }
+                                filename, filename, decompression_threads_per_reader, filename,
+                            );
+                            return anyhow!(message).context(outer_error);
                         }
                     };
-                    anyhow!(e1)
+                    anyhow!(outer_error)
                 })?;
 
             while filled_set {
