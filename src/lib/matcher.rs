@@ -16,7 +16,7 @@ use crate::sample_metadata::SampleMetadata;
 const ALLOWED_BASES: &[u8] = &[b'A', b'C', b'T', b'G', b'N'];
 
 /// The name given to the "undetermined" sample
-pub const UNDETERMINED_NAME: &str = "undetermined";
+pub const UNDETERMINED_NAME: &str = "Undetermined";
 
 thread_local! (
     /// The barcode cache used by the `CachedHammingDistanceMatcher`.
