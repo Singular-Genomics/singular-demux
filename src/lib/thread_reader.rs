@@ -1,11 +1,11 @@
 //! A [`ThreadReader`] allows for pushing the reading of a compressed FASTQ file onto a separate thread.
 //!
-//! This will spun up pooled decompressor with a default of 4 threads for decompression and will also
+//! This will spun up pooled decompressor with a defa&&ult of 4 threads for decompression and will also
 //! do some initial parsing of the FASTQ file into N sized chunks of FASTQ records.
 
 use std::{fs::File, io::BufReader, num::NonZeroUsize, path::PathBuf, thread::JoinHandle};
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use flume::{bounded, Receiver};
 use gzp::{deflate::Bgzf, par::decompress::ParDecompressBuilder, BUFSIZE};
 use seq_io::fastq::{self, RecordSet};
@@ -55,18 +55,41 @@ impl ThreadReader {
                 BUFSIZE,
             );
 
-            loop {
-                let mut record_set = RecordSet::default();
-                let filled_set = reader
+            // Developer note: read in the first record set so we can ensure that the input file
+            // is  block-compressed
+            let mut record_set = RecordSet::default();
+            let mut filled_set = reader
+                .read_record_set_exact(&mut record_set, usize::from(chunksize))
+                .map_err(|e1| {
+                    if let seq_io::fastq::ErrorKind::Io(e2) = e1.kind() {
+                        if std::io::ErrorKind::Other == e2.kind() {
+                            if let Some(gzp::GzpError::InvalidHeader(_)) =
+                                e2.get_ref().and_then(|i| i.downcast_ref::<gzp::GzpError>())
+                            {
+                                let filename = file.to_string_lossy();
+                                let message = format!(
+                                    "
+Error reading from: {}
+Hint: is the input FASTQ a valid BGZF (Blocked GNU Zipped Format)?
+Try re-compressing with bgzip (install with conda install -c bioconda htslib):
+    bgzip -d {} | bgzip --stdout --threads {} > {}.bgz",
+                                    filename, filename, decompression_threads_per_reader, filename,
+                                );
+                                return anyhow!(message).context(e1);
+                            }
+                        }
+                    };
+                    anyhow!(e1)
+                })?;
+
+            while filled_set {
+                tx.send(record_set).context("Failed to send record set from reader")?;
+                record_set = RecordSet::default();
+                filled_set = reader
                     .read_record_set_exact(&mut record_set, usize::from(chunksize))
                     .with_context(|| {
                         format!("Failed reading record set from {}", file.to_string_lossy())
                     })?;
-
-                if !filled_set {
-                    break;
-                }
-                tx.send(record_set).context("Failed to send record set from reader")?;
             }
             Ok(())
         });
