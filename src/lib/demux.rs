@@ -1595,9 +1595,9 @@ mod test {
             .collect();
 
         metadata.push(
-            SampleMetadata::new(
+            SampleMetadata::new_allow_invalid_bases(
                 String::from(UNDETERMINED_NAME),
-                BString::from(UNDETERMINED_NAME),
+                BString::from(vec![b'N'; metadata[0].barcode.len()]),
                 metadata.len(),
             )
             .unwrap(),
