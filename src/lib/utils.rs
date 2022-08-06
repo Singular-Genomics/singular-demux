@@ -1,12 +1,18 @@
 //! Utility functions.
-use std::path::{Path, PathBuf};
+use std::{
+    fs::File,
+    io::{BufReader, Read},
+    path::{Path, PathBuf},
+};
 
+use crate::sample_metadata::SampleMetadata;
 use ahash::AHashMap;
+use anyhow::{anyhow, Context};
+use core::fmt::Display;
+use gzp::{deflate::Bgzf, BlockFormatSpec, GzpError, BUFSIZE};
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use read_structure::{ReadStructure, SegmentType};
-
-use crate::sample_metadata::SampleMetadata;
 
 lazy_static! {
     /// Return the number of cpus as a String
@@ -107,6 +113,71 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         self.0.iter_mut().map(Iterator::next).collect()
     }
+}
+
+/// Checks if the file is a BGZF file
+pub fn check_bgzf(file: &Path) -> Result<(), anyhow::Error> {
+    let mut reader = match File::open(&file) {
+        Ok(f) => BufReader::with_capacity(BUFSIZE, f),
+        Err(error) => {
+            return Err(error).with_context(|| format!("Failed to open {}", file.to_string_lossy()))
+        }
+    };
+    let mut bytes = vec![0; Bgzf::HEADER_SIZE];
+    match reader.read_exact(&mut bytes) {
+        Err(error) => {
+            // not enough bytes read
+            let message =
+                format!("Error reading from: {}\nIs it truncated?", file.to_string_lossy());
+            Err(anyhow!(message).context(error))
+        }
+        Ok(()) => {
+            if bytes[0] != 31 || bytes[1] != 139 || bytes[2] != 8 {
+                // not a valid GZIP file
+                report_bgzf_error(file, GzpError::InvalidHeader("Header not in GZIP format"), false)
+            } else if bytes[3] & 4 != 4 || bytes[12] != b'B' || bytes[13] != b'C' {
+                // non-BGZF GZIP file
+                report_bgzf_error(
+                    file,
+                    GzpError::InvalidHeader("Header in GZIP but not BGZF format"),
+                    true,
+                )
+            } else {
+                Ok(())
+            }
+        }
+    }
+}
+
+/// Creates an error message when the file does not look like a BGZF file.
+fn report_bgzf_error<C>(file: &Path, context: C, is_gzip: bool) -> Result<(), anyhow::Error>
+where
+    C: Display + Send + Sync + 'static,
+{
+    let filename = file.to_string_lossy();
+    let format = if is_gzip { "gzip" } else { "unknown" };
+    let message = format!(
+        "
+Error reading from: {}
+
+The input must be in BGZF (bgzip) format!
+
+The input was found in a {} format.
+
+Hint: is the input GZIP compressed? is the input uncompressed FASTQ?
+
+To re-compress a GZIP file with bgzip:
+  1. install with `conda install -c bioconda htslib`
+  2. `gunzip -c {} > tmp.fastq`
+  3. `bgzip --stdout --threads tmp.fastq > {}`
+
+To compress an uncompressed FASTQ file with bgzip:
+  1. install with `conda install -c bioconda htslib`
+  2. `bgzip --threads {}`
+",
+        filename, format, filename, filename, filename,
+    );
+    Err(anyhow!(message).context(context))
 }
 
 #[cfg(not(tarpaulin_include))]
@@ -280,13 +351,22 @@ pub mod test_commons {
 
 #[cfg(test)]
 mod test {
-    use std::{iter::IntoIterator, path::PathBuf, str::FromStr, vec::IntoIter};
+    use std::{
+        fs::File,
+        io::{BufWriter, Write},
+        iter::IntoIterator,
+        path::PathBuf,
+        str::FromStr,
+        vec::IntoIter,
+    };
 
+    use gzp::{BgzfSyncWriter, Compression, MgzipSyncWriter};
     use read_structure::{ReadStructure, SegmentType};
 
     use crate::sample_metadata::SampleMetadata;
 
-    use super::{filenames, MultiZip};
+    use super::{check_bgzf, filenames, MultiZip};
+    use tempfile::tempdir;
 
     #[test]
     fn test_filenames_simple() {
@@ -325,5 +405,55 @@ mod test {
             MultiZip::new(input.into_iter().map(IntoIterator::into_iter).collect());
         let sum = multi.map(|zipped| zipped.into_iter().sum::<i32>()).sum::<i32>();
         assert_eq!(32, sum);
+    }
+
+    #[test]
+    fn test_check_bgzf_path_does_not_exist_fail() {
+        let dir = tempdir().unwrap();
+        let file = dir.path().join("does_not_exist.txt");
+        assert!(check_bgzf(&file).is_err());
+    }
+
+    #[test]
+    fn test_check_bgzf_on_plaintext_fail() {
+        let dir = tempdir().unwrap();
+
+        // Create output file
+        let file = dir.path().join("plaintext.txt");
+        let mut writer = BufWriter::new(File::create(&file).unwrap());
+        writer.write_all(b"@NAME\nGATTACA\n+\nIIIIIII\n").unwrap();
+        drop(writer);
+
+        assert!(check_bgzf(&file).is_err());
+    }
+
+    #[test]
+    fn test_check_bgzf_on_gzip_fail() {
+        let dir = tempdir().unwrap();
+
+        // Create output file
+        let file = dir.path().join("fastq.gz");
+        let writer = BufWriter::new(File::create(&file).unwrap());
+        let mut gz_writer = MgzipSyncWriter::new(writer, Compression::new(3));
+        gz_writer.write_all(b"@NAME\nGATTACA\n+\nIIIIIII\n").unwrap();
+        gz_writer.flush().unwrap();
+        drop(gz_writer);
+
+        assert!(check_bgzf(&file).is_err());
+    }
+
+    #[test]
+    fn test_check_bgzf_ok() {
+        let dir = tempdir().unwrap();
+
+        // Create output file
+        let file = dir.path().join("fastq.gz");
+        let writer = BufWriter::new(File::create(&file).unwrap());
+        let mut gz_writer = BgzfSyncWriter::new(writer, Compression::new(3));
+        gz_writer.write_all(b"@NAME\nGATTACA\n+\nIIIIIII\n").unwrap();
+        gz_writer.flush().unwrap();
+        drop(gz_writer);
+
+        assert!(check_bgzf(&file).is_ok());
     }
 }

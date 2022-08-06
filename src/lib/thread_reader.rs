@@ -5,7 +5,7 @@
 
 use std::{fs::File, io::BufReader, num::NonZeroUsize, path::PathBuf, thread::JoinHandle};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use flume::{bounded, Receiver};
 use gzp::{deflate::Bgzf, par::decompress::ParDecompressBuilder, BUFSIZE};
 use seq_io::fastq::{self, RecordSet};
@@ -55,40 +55,18 @@ impl ThreadReader {
                 BUFSIZE,
             );
 
-            // Developer note: read in the first record set so that a well-formatted message is
-            // given when the input file is not BGZF.
-            let mut record_set = RecordSet::default();
-            let mut filled_set = reader
-                .read_record_set_exact(&mut record_set, usize::from(chunksize))
-                .map_err(|outer_error| {
-                    if let seq_io::fastq::ErrorKind::Io(inner_error) = outer_error.kind() {
-                        // This implies the inner_error is of kind `std::io::ErrorKind::Other`
-                        if let Some(gzp::GzpError::InvalidHeader(_)) =
-                            inner_error.get_ref().and_then(|i| i.downcast_ref::<gzp::GzpError>())
-                        {
-                            let filename = file.to_string_lossy();
-                            let message = format!(
-                                "
-Error reading from: {}
-Hint: is the input FASTQ a valid BGZF (Blocked GNU Zipped Format) and not GZIP?
-Try re-compressing with bgzip (install with conda install -c bioconda htslib):
-    bgzip -d {} | bgzip --stdout --threads {} > {}.bgz",
-                                filename, filename, decompression_threads_per_reader, filename,
-                            );
-                            return anyhow!(message).context(outer_error);
-                        }
-                    };
-                    anyhow!(outer_error)
-                })?;
-
-            while filled_set {
-                tx.send(record_set).context("Failed to send record set from reader")?;
-                record_set = RecordSet::default();
-                filled_set = reader
+            loop {
+                let mut record_set = RecordSet::default();
+                let filled_set = reader
                     .read_record_set_exact(&mut record_set, usize::from(chunksize))
                     .with_context(|| {
                         format!("Failed reading record set from {}", file.to_string_lossy())
                     })?;
+
+                if !filled_set {
+                    break;
+                }
+                tx.send(record_set).context("Failed to send record set from reader")?;
             }
             Ok(())
         });
