@@ -592,7 +592,7 @@ mod test {
 
     use crate::{
         fastq_header::FastqHeader,
-        matcher::MatcherKind,
+        matcher::{MatcherKind, UNDETERMINED_NAME},
         metrics::{BarcodeCount, RunMetrics, SampleMetricsProcessed},
         sample_metadata::{self, SampleMetadata},
         utils::test_commons::{
@@ -852,7 +852,7 @@ mod test {
                 assert!(names.contains(&b"frag2".to_vec()));
                 assert!(barcodes.contains(&b"AAAAAAAAGATTACAGA".to_vec()));
                 assert!(barcodes.contains(&b"AAAAAAAAGATTACAGT".to_vec()));
-            } else if *name == "undetermined" {
+            } else if *name == UNDETERMINED_NAME {
                 assert_eq!(records.len(), 3);
                 assert!(names.contains(&b"frag3".to_vec()));
                 assert!(names.contains(&b"frag4".to_vec()));

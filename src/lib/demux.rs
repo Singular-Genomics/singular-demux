@@ -609,7 +609,9 @@ mod test {
     use crate::{
         demux::{self, Demultiplex, DemuxReadFilterConfig},
         fastq_header::FastqHeader,
-        matcher::{CachedHammingDistanceMatcher, MatcherKind, PreComputeMatcher},
+        matcher::{
+            CachedHammingDistanceMatcher, MatcherKind, PreComputeMatcher, UNDETERMINED_NAME,
+        },
         run::Opts,
         sample_metadata::SampleMetadata,
         utils::test_commons::{
@@ -1593,9 +1595,9 @@ mod test {
             .collect();
 
         metadata.push(
-            SampleMetadata::new(
-                String::from("UNDETERMINED"),
-                BString::from("UNDETERMINED"),
+            SampleMetadata::new_allow_invalid_bases(
+                String::from(UNDETERMINED_NAME),
+                BString::from(vec![b'N'; metadata[0].barcode.len()]),
                 metadata.len(),
             )
             .unwrap(),
