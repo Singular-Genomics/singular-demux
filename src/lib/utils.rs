@@ -164,15 +164,15 @@ The input must be in BGZF (bgzip) format!
 
 The input was found in a {} format.
 
-Hint: is the input GZIP compressed? is the input uncompressed FASTQ?
-
 To re-compress a GZIP file with bgzip:
   1. install with `conda install -c bioconda htslib`
+     or from http://www.htslib.org/download/
   2. `gunzip -c {} > tmp.fastq`
   3. `bgzip --stdout --threads tmp.fastq > {}`
 
 To compress an uncompressed FASTQ file with bgzip:
   1. install with `conda install -c bioconda htslib`
+     or from http://www.htslib.org/download/
   2. `bgzip --threads {}`
 ",
         filename, format, filename, filename, filename,
