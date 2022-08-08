@@ -52,7 +52,7 @@ pub fn s(bytes: &[u8]) -> String {
 }
 
 /// Returns the character representation of this segment to be used in a FASTQ file name.
-fn segment_kind_to_fastq_id(kind: &SegmentType) -> char {
+pub fn segment_kind_to_fastq_id(kind: &SegmentType) -> char {
     match kind {
         SegmentType::Template => 'R',
         SegmentType::SampleBarcode => 'I',

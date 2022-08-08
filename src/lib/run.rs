@@ -205,7 +205,7 @@ pub struct Opts {
     /// For each read structure, all segment types listed by `--output-types` will be output to a
     /// FASTQ file.
     // TODO: add FromStr implementation for SegmentType so this can be a Vec<SegmentType>.  See: https://github.com/fulcrumgenomics/read-structure/issues/3
-    #[clap(long, short = 'T', default_value = "TB", verbatim_doc_comment, display_order = 21)]
+    #[clap(long, short = 'T', default_value = "T", verbatim_doc_comment, display_order = 21)]
     pub output_types: String,
 
     /// The sample name for undetermined reads (reads that do not match an expected barcode).
@@ -600,9 +600,12 @@ mod test {
         matcher::{MatcherKind, UNDETERMINED_NAME},
         metrics::{BarcodeCount, RunMetrics, SampleMetricsProcessed},
         sample_metadata::{self, SampleMetadata},
-        utils::test_commons::{
-            create_preset_sample_metadata_file, slurp_fastq, write_reads_to_file, Fq,
-            SAMPLE_BARCODE_1, SAMPLE_BARCODE_4,
+        utils::{
+            segment_kind_to_fastq_id,
+            test_commons::{
+                create_preset_sample_metadata_file, slurp_fastq, write_reads_to_file, Fq,
+                SAMPLE_BARCODE_1, SAMPLE_BARCODE_4,
+            },
         },
     };
 
@@ -812,6 +815,7 @@ mod test {
         #[values(1, 2)] threads: usize,
         #[values(None, Some(MatcherKind::PreCompute), Some(MatcherKind::CachedHammingDistance))]
         matcher: Option<MatcherKind>,
+        #[values("T", "B", "TB")] output_types: String,
     ) {
         let dir = tempfile::tempdir().unwrap();
         let read_structure = ReadStructure::from_str("17B100T").unwrap();
@@ -832,6 +836,7 @@ mod test {
             compressor_threads: threads,
             writer_threads: threads,
             override_matcher: matcher,
+            output_types: output_types,
             ..Opts::default()
         };
 
@@ -843,30 +848,35 @@ mod test {
         )
         .unwrap();
 
+        let output_types_to_write = opts.output_types_to_write().unwrap();
+
         run(opts).unwrap();
 
         // Check outputs
         for name in samples.iter().map(|s| &s.sample_id) {
-            let fastq = output.join(format!("{}_R1.fastq.gz", name));
-            let records = slurp_fastq(&fastq);
-            let (names, barcodes) = names_and_barcodes(&records);
+            for output_type_to_write in &output_types_to_write {
+                let fastq_id = segment_kind_to_fastq_id(output_type_to_write);
+                let fastq = output.join(format!("{}_{}1.fastq.gz", name, fastq_id));
+                let records = slurp_fastq(&fastq);
+                let (names, barcodes) = names_and_barcodes(&records);
 
-            if *name == "Sample1" {
-                assert_eq!(records.len(), 2);
-                assert!(names.contains(&b"frag1".to_vec()));
-                assert!(names.contains(&b"frag2".to_vec()));
-                assert!(barcodes.contains(&b"AAAAAAAAGATTACAGA".to_vec()));
-                assert!(barcodes.contains(&b"AAAAAAAAGATTACAGT".to_vec()));
-            } else if *name == UNDETERMINED_NAME {
-                assert_eq!(records.len(), 3);
-                assert!(names.contains(&b"frag3".to_vec()));
-                assert!(names.contains(&b"frag4".to_vec()));
-                assert!(names.contains(&b"frag5".to_vec()));
-                assert!(barcodes.contains(&b"AAAAAAAAGATTACTTT".to_vec()));
-                assert!(barcodes.contains(&b"GGGGGGTTGATTACAGA".to_vec()));
-                assert!(barcodes.contains(&b"AAAAAAAAGANNNNNNN".to_vec()));
-            } else {
-                assert!(records.is_empty());
+                if *name == "Sample1" {
+                    assert_eq!(records.len(), 2);
+                    assert!(names.contains(&b"frag1".to_vec()));
+                    assert!(names.contains(&b"frag2".to_vec()));
+                    assert!(barcodes.contains(&b"AAAAAAAAGATTACAGA".to_vec()));
+                    assert!(barcodes.contains(&b"AAAAAAAAGATTACAGT".to_vec()));
+                } else if *name == UNDETERMINED_NAME {
+                    assert_eq!(records.len(), 3);
+                    assert!(names.contains(&b"frag3".to_vec()));
+                    assert!(names.contains(&b"frag4".to_vec()));
+                    assert!(names.contains(&b"frag5".to_vec()));
+                    assert!(barcodes.contains(&b"AAAAAAAAGATTACTTT".to_vec()));
+                    assert!(barcodes.contains(&b"GGGGGGTTGATTACAGA".to_vec()));
+                    assert!(barcodes.contains(&b"AAAAAAAAGANNNNNNN".to_vec()));
+                } else {
+                    assert!(records.is_empty());
+                }
             }
         }
 
