@@ -18,7 +18,7 @@ use crate::{
     pooled_sample_writer::PooledSampleWriter,
     sample_metadata::{self},
     thread_reader::ThreadReader,
-    utils::{built_info, filenames, MultiZip},
+    utils::{built_info, check_bgzf, filenames, MultiZip},
 };
 
 /// Performs sample demultiplexing on block-compressed (BGZF) FASTQs.
@@ -372,6 +372,11 @@ pub fn run(opts: Opts) -> Result<(), anyhow::Error> {
             == samples[0].barcode.len(),
         "The number of sample barcode bases in read structures does not match sample metadata"
     );
+
+    // Check that the input FASTQs are in BGZF format
+    for fastq in &opts.fastqs {
+        check_bgzf(fastq)?;
+    }
 
     info!("Creating writer threads");
     let writers: Result<Vec<_>> = samples
