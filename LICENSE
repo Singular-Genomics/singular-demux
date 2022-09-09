@@ -1,1 +1,75 @@
-FIXME
+LICENSE AGREEMENT
+
+BY DOWNLOADING THE SOFTWARE (AS DEFINED BELOW), YOU AND THE COMPANY OR ENTITY
+THAT YOU REPRESENT (“YOU”) ARE AGREEING TO BE BOUND BY AND ARE BECOMING A PARTY TO THIS LICENSE
+AGREEMENT (“AGREEMENT”). IF YOU DO NOT AGREE TO ALL OF THE TERMS OF THIS AGREEMENT, DO NOT
+DOWNLOAD THE SOFTWARE, AND YOU ARE PROHIBITED FROM ACCESSING, INSTALLING OR USING THE SOFTWARE.
+IF THESE TERMS ARE CONSIDERED AN OFFER, ACCEPTANCE IS EXPRESSLY LIMITED TO THESE TERMS.  
+SINGULAR RESERVES THE RIGHT, IN ITS SOLE DISCRETION, TO MODIFY THIS AGREEMENT AT ANY TIME BY
+POSTING A NOTICE TO https://github.com/Singular-Genomics/singular-demux, OR BY SENDING YOU A
+NOTICE VIA EMAIL.  YOU SHALL BE RESPONSIBLE FOR REVIEWING AND BECOMING FAMILIAR WITH ANY SUCH
+MODIFICATIONS, AND YOUR USE OF THE SOFTWARE FOLLOWING SUCH NOTIFICATION CONSTITUTES YOUR
+ACCEPTANCE OF THE TERMS AND CONDITIONS OF THIS AGREEMENT AS MODIFIED.
+1. GRANT. Subject to Your compliance with all of the terms and conditions of this Agreement,
+   Singular Genomics Systems, Inc. (“Singular”) hereby grants You a limited, personal,
+   non-sublicensable, non-transferable, royalty-free, nonexclusive license to download, install
+   and use the Singular Demultiplexing Software that you are about to access along with any
+   documentation that accompanies it (collectively, the "Software") solely in connection with
+   data derived from the Singular G4™ Sequencing Platform (“Devices”). You may exercise the
+   foregoing license only within and for the benefit of Your organization. 
+2. RESTRICTIONS. You shall not, directly or indirectly (or allow any third party to): (i) use
+   the Software with (or to create or facilitate the creation of) any product or service that is
+   competitive (in any way) with the Software or Devices; (ii) decompile, reverse engineer,
+   modify or create derivative works of the Software (including any portions thereof); (iii)
+   rent or lease the Software; (iv) use the Software for timesharing or service bureau purposes,
+   or otherwise for the benefit of third parties; (v) use the Software except as expressly
+   licensed above; or (vi) remove or alter or obscure any proprietary notices from the Software.  
+3.  OWNERSHIP.  As between the parties, all title, ownership rights, and intellectual property
+    rights in and to the Software, and any copies or portions thereof, shall remain in Singular
+    and its suppliers or licensors.  
+4. WARRANTY AND DISCLAIMER. SINGULAR PROVIDES THE SOFTWARE “AS IS” AND WITHOUT WARRANTY OF ANY
+   KIND, AND SINGULAR HEREBY DISCLAIMS ALL EXPRESS OR IMPLIED WARRANTIES, INCLUDING WITHOUT
+   LIMITATION WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, PERFORMANCE,
+   ACCURACY, RELIABILITY, AND NON-INFRINGEMENT. THIS DISCLAIMER OF WARRANTY CONSTITUTES AN
+   ESSENTIAL PART OF THIS AGREEMENT.
+5. LIMITATION OF LIABILITY. UNDER NO CIRCUMSTANCES (AND UNDER NO LEGAL THEORY, TORT, CONTRACT,
+   STRICT LIABILITY, OR OTHERWISE) SHALL SINGULAR OR ITS LICENSORS OR SUPPLIERS BE LIABLE TO YOU
+   OR ANY OTHER PERSON FOR ANY: (I) DIRECT, INDIRECT, SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
+   DAMAGES OF ANY KIND, EVEN IF FORESEEABLE, INCLUDING, WITHOUT LIMITATION, COST OF SUBSTITUTE
+   TECHNOLOGY, DAMAGES FOR LOST PROFITS, LOSS OF GOODWILL, WORK STOPPAGE, ACCURACY OF RESULTS,
+   LOSS OF DATA, COMPUTER FAILURE OR MALFUNCTION; (II) AMOUNTS IN THE AGGREGATE IN EXCESS OF US
+   $100.00; OR (III) MATTERS BEYOND THEIR REASONABLE CONTROL.
+6. CONFIDENTIALITY. You will not disclose (or allow access to) the Software (or any information
+   derived from it) to any third party and you will limit access to the Software (and any
+   derived information) to Your employees who require such access to analyze data derived from
+   the Devices.
+7. TERMINATION. You may terminate this Agreement and the license granted herein at any time by
+   ceasing use of and destroying all copies of the Software. Singular may terminate this
+   Agreement and the license granted herein immediately if You breach any provision of this
+   Agreement, for any other reason, or for no reason. Upon receiving notice of termination from
+   Singular, You agree to cease use and destroy all copies of the Software. Sections 2-9
+   (inclusive) shall survive termination of this Agreement.
+8. U.S. GOVERNMENT RESTRICTED RIGHTS. If You are part of an agency, department or other entity
+   of the U.S. government (the “Government”), Your use, duplication or disclosure of the
+   Software is subject to restrictions set forth in subparagraphs (a) through (d) of the
+   Commercial Computer-Restricted Rights clause at FAR 52.227-19 when applicable, or in
+   subparagraph (c) (1) (ii) of the Rights in Technical Data and Computer Software clause in
+   DFARS 252.227-7013, and in similar clauses in the NASA FAR Supplement.  In accordance with
+   such restrictions, any use of the Software by the Government shall be governed solely by the
+   terms of this Agreement.
+9. MISCELLANEOUS. You shall not assign or transfer any part of this Agreement to any third
+   party.  This Agreement represents the complete agreement concerning this license between the
+   parties and supersedes all prior agreements and representations between them, and, except as
+   otherwise expressly set forth herein, may be amended only by a writing executed by both
+   parties. If any provision of this Agreement is held to be unenforceable for any reason, such
+   provision shall be reformed only to the extent necessary to make it enforceable. This
+   Agreement shall be governed by and construed under California law as such law applies to
+   agreements between California residents entered into and to be performed within California.
+   Any disputes arising from this Agreement shall be subject to the sole and exclusive
+   jurisdiction of, and venue in, the state and Federal Courts located in San Diego, California
+   (and the You hereby consent and submit to such jurisdiction and venue).  
+
+Singular Genomics Systems, Inc.
+
+3010 Science Park Road,
+San Diego, CA 92121
