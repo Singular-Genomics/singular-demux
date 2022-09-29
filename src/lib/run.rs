@@ -21,8 +21,7 @@ use crate::{
     utils::{built_info, check_bgzf, filenames, MultiZip},
 };
 
-static LOGO: &str =
-"
+static LOGO: &str = "
 ███████╗██╗███╗   ██╗ ██████╗ ██╗   ██╗██╗      █████╗ ██████╗
 ██╔════╝██║████╗  ██║██╔════╝ ██║   ██║██║     ██╔══██╗██╔══██╗
 ███████╗██║██╔██╗ ██║██║  ███╗██║   ██║██║     ███████║██████╔╝
@@ -40,8 +39,7 @@ static LOGO: &str =
 
 static SHORT_USAGE: &str = "Performs sample demultiplexing on block-compressed (BGZF) FASTQs.";
 
-static LONG_USAGE: &str =
-"
+static LONG_USAGE: &str = "
 ███████╗██╗███╗   ██╗ ██████╗ ██╗   ██╗██╗      █████╗ ██████╗
 ██╔════╝██║████╗  ██║██╔════╝ ██║   ██║██║     ██╔══██╗██╔══██╗
 ███████╗██║██╔██╗ ██║██║  ███╗██║   ██║██║     ███████║██████╔╝
