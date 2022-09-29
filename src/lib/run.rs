@@ -21,128 +21,70 @@ use crate::{
     utils::{built_info, check_bgzf, filenames, MultiZip},
 };
 
-/// Performs sample demultiplexing on block-compressed (BGZF) FASTQs.
-///
-/// The input FASTQs must be block compressed (e.g. with (`bgzip`)<http://www.htslib.org/doc/bgzip.html>).
-///
-/// # Synopsis
-/// The sample barcode for each sample in the sample metadata will be compared against the specified barcode bases extracted from
-/// the FASTQS, to assign each read to a sample. Reads that do not match any sample within the given error tolerance are
-/// placed in the "unmatched file". A provided (Read Structures)<https://github.com/fulcrumgenomics/fgbio/wiki/Read-Structures>
-/// specifies which bases are considered sample bases, UMI bases, template bases, and bases to be ignored/skipped.
-///
-/// # Outputs
-/// One or more BGZF compressed FASTQ files will be created per-sample as output in the specified output directory. For
-/// paired end data, the output will have the suffix `_R1.fastq.gz` and `_R2.fastq.gz` for read one and read two
-/// respectively. The sample barcode and molecular barcodes (concatenated) will be appended to the read name and
-/// delimited by a `+`.
-///
-/// Additionally, 2-4 metrics files will be created in the output directory after demultiplexing is complete:
-///
-/// - `per_sample_metrics.tsv` - metrics for each sample in the sample_metadata.
-///   - `barcode_name`  - The name for the sample barcode, typically the same name from the SampleSheet.
-///   - `library_name`  - The name of the library, typically the library identifier from the SampleSheet.
-///   - `barcode`  - The sample barcode bases. Dual index barcodes will have two sample barcode sequences delimited by a `+`.
-///   - `templates` - The total number of templates matching the given barcode.
-///   - `perfect_matches`  - The number of templates that match perfectly the given barcode.
-///   - `one_mismatch_matches` - The number of pass-filter templates that match the given barcode with exactly one mismatch.
-///   - `q20_bases` - The number of bases in a template with a quality score 20 or above.
-///   - `q30_bases` - The number of bases in a template with a quality score 30 or above.
-///   - `total_number_of_bases` - The total number of bases in the templates combined.
-///   - `fraction_matches` - The fraction of all templates that match the given barcode.
-///                          The rate of all templates matching this barcode to all template reads matching the most
-///                          prevalent barcode. For the most prevalent barcode this will be 1, for all others it will be
-///                          less than 1 (except for the possible exception of when there are more unmatched templates than
-///                          for any other barcode, in which case the value may be arbitrarily large). One over the lowest
-///                          number in this column gives you the fold-difference in representation
-///   - `ratio_this_barcode_to_best_barcodebetween`  barcodes.
-///   - `frac_q20_bases` - The fraction of bases in a template with a quality score 20 or above.
-///   - `frac_q30_bases` - The fraction of bases in a template with a quality score 30 or above.
-///   - `mean_index_base_quality` - The mean quality of index bases.
-/// - `run_metrics.tsv` - run level metrics.
-///   - `control_reads_omitted` - The number of reads that were omitted for being control reads.
-///   - `failing_reads_omitted` - The number of reads that were omitted for having failed QC.
-///   - `total_templates` - The total number of template reads that were output.
-/// - `most_frequent_unmatched.tsv`- (optional) the approximate counts of the most seen unmatched barcodes.
-///   - `barcode` - The barcode.
-///   - `count` - The count of the barcode.
-/// - `sample_barcode_hop_metrics.tsv` - (output if dual-index) the counts of identified index hop barcodes.
-///   - `barcode` - The barcode.
-///   - `count` - The count of the barcode.
-///
-/// # Inputs
-/// FASTQs and associated read structures for each sub-read should be given:
-///
-/// - dual-sample-barcoded paired end reads should have four FASTQs and four read structures given: two for the two
-///   sample barcodes, and two for the template reads, e.g.:
-///   `-r 8B -r +T -r +T -r 8B -f I1.fastq.gz -f R1.fastq.gz -f R2.fastq.gz -f I2.fastq.gz`
-/// - dual-sample-barcoded paired end reads with inlined sample barcodes should have two FASTQs and two read structures given, e.g.:
-///   `-r 8B+T -r 8B+T -f R1.fastq.gz -f R2.fastq.gz`
-///
-/// If multiple FASTQs are present for each sub-read, then the FASTQs for reach sub-read should be concatenated together
-/// prior to running this tool (e.g.: cat s_R1_L001.fastq.gz s_R1_L002.fastq.gz > s_R1.fastq.gz)
-///
-/// **NOTE**, inputs _must_ be BGZF compressed (TODO: link).
-///
-/// ## Read Structures
-/// (Read Structures)<https://github.com/fulcrumgenomics/fgbio/wiki/Read-Structures> are made up of <number><operator> pairs
-/// much like the CIGAR string in BAM files. Four kinds of operators are recognized:
-///
-/// 1. **T** identifies template read
-/// 2. **B** identifies sample barcode read
-/// 3. **M** identifies a unique molecular index read
-/// 4. **S** identifies a set of
-///
-/// The last <number><operator> pair may be specified using a `+` sign instead of a number to denote "all remaining bases".
-/// This is useful if, e.g., FASTQs have been trimmed and contain reds of varying length. Both reads must have template
-/// bases. Any molecular identifiers will be concatenated using the `+` delimiter and placed in the FASTQ header. Similarly,
-/// the sample barcode bases will also be placed in the FASTQ header.
-///
-/// ## Sample Metadata
-///
-/// The format of the sample metadata CSV is as follows (any extra columns will be ignored):
-///
-/// * **Column Header**: Sample_Barcode
-///     * **Description**: The sample barcode sequence. <br>
-///                    If the sample barcode is present across multiple reads (ex. dual-index, or inline in both reads of a pair),
-///                    then the expected barcode bases from each read should be concatenated in the same order as the order of the reads' FASTQs and read structures given to this tool.
-///                    Non-ACGT characters will be removed.
-///     * **Required**: True
-/// * **Column Header**: Sample_ID
-///     * **Description**: The unique identifier for the sample
-///     * **Required**: True
-///
-/// ## How to Control Mismatch Tolerance
-///
-/// To adjust the mismatch tolerances, see the following options:
-/// - `--allowed-mismatches` - Number of allowed mismatches between the observed barcode and the expected barcode.
-/// - `--min-delta` - The minimum allowed difference between an observed barcode and the second closest expected barcode.
-/// - `--free-ns` - Number of N's to allow in a barcode without counting against the allowed_mismatches.
-/// - `--max-no-calls` - Number of N's to allow in a barcode without counting against the allowed_mismatches.
-///
-/// ## Performance Tuning
-///
-/// To fine tune the perfomrance of this tool, see the following options:
-/// - `--demux-threads` -  Number of threads for demultiplexing reads.
-/// - `--compressor-threads` - Number of threads to use for compressing demultiplexed reads.
-/// - `--writer-threads` - Number of threads to use for writing compressed reads to output.
-///
-/// The defaults are intended for a 32 core machine.
-/// In general you will want the following rough ratios:
-/// - 1/3 of available threads for compression
-/// - 1/6 of available threads for writing
-/// - 1/6-1/3 of available threads for demultiplexing
-///
-/// This does not add up to 100% because there are readers that are decompressing the input FASTQs
-/// as well which well, in addition to utility threads for metrics tracking, etc.
-///
-/// Currently this tool does not provide a way place a hard limit on the number of threads used.
-///
+static LOGO: &str =
+"
+███████╗██╗███╗   ██╗ ██████╗ ██╗   ██╗██╗      █████╗ ██████╗
+██╔════╝██║████╗  ██║██╔════╝ ██║   ██║██║     ██╔══██╗██╔══██╗
+███████╗██║██╔██╗ ██║██║  ███╗██║   ██║██║     ███████║██████╔╝
+╚════██║██║██║╚██╗██║██║   ██║██║   ██║██║     ██╔══██║██╔══██╗
+███████║██║██║ ╚████║╚██████╔╝╚██████╔╝███████╗██║  ██║██║  ██║
+╚══════╝╚═╝╚═╝  ╚═══╝ ╚═════╝  ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝
+
+ ██████╗ ███████╗███╗   ██╗ ██████╗ ███╗   ███╗██╗ ██████╗███████╗
+██╔════╝ ██╔════╝████╗  ██║██╔═══██╗████╗ ████║██║██╔════╝██╔════╝
+██║  ███╗█████╗  ██╔██╗ ██║██║   ██║██╔████╔██║██║██║     ███████╗
+██║   ██║██╔══╝  ██║╚██╗██║██║   ██║██║╚██╔╝██║██║██║     ╚════██║
+╚██████╔╝███████╗██║ ╚████║╚██████╔╝██║ ╚═╝ ██║██║╚██████╗███████║
+ ╚═════╝ ╚══════╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝     ╚═╝╚═╝ ╚═════╝╚══════╝
+";
+
+static SHORT_USAGE: &str = "Performs sample demultiplexing on block-compressed (BGZF) FASTQs.";
+
+static LONG_USAGE: &str =
+"
+███████╗██╗███╗   ██╗ ██████╗ ██╗   ██╗██╗      █████╗ ██████╗
+██╔════╝██║████╗  ██║██╔════╝ ██║   ██║██║     ██╔══██╗██╔══██╗
+███████╗██║██╔██╗ ██║██║  ███╗██║   ██║██║     ███████║██████╔╝
+╚════██║██║██║╚██╗██║██║   ██║██║   ██║██║     ██╔══██║██╔══██╗
+███████║██║██║ ╚████║╚██████╔╝╚██████╔╝███████╗██║  ██║██║  ██║
+╚══════╝╚═╝╚═╝  ╚═══╝ ╚═════╝  ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝
+
+ ██████╗ ███████╗███╗   ██╗ ██████╗ ███╗   ███╗██╗ ██████╗███████╗
+██╔════╝ ██╔════╝████╗  ██║██╔═══██╗████╗ ████║██║██╔════╝██╔════╝
+██║  ███╗█████╗  ██╔██╗ ██║██║   ██║██╔████╔██║██║██║     ███████╗
+██║   ██║██╔══╝  ██║╚██╗██║██║   ██║██║╚██╔╝██║██║██║     ╚════██║
+╚██████╔╝███████╗██║ ╚████║╚██████╔╝██║ ╚═╝ ██║██║╚██████╗███████║
+ ╚═════╝ ╚══════╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝     ╚═╝╚═╝ ╚═════╝╚══════╝
+
+Performs sample demultiplexing on block-compressed (BGZF) FASTQs.
+
+Input FASTQs must be block compressed (e.g. with `bgzip`).  A single bgzipped FASTQ file
+should be provided per instrument read.  One read structure should be provided per input FASTQ.
+
+The output directory specified with --output must exist.  Per-sample files with suffixes like
+_R1.fastq.gz will be written to the output directory.
+
+The sample metadata file must be a two-column CSV file with headers.  The `Sample_ID` column
+must contain a unique, non-empty identifier for each sample.  The `Sample_Barcode` column must
+contain the unique set of sample barcode bases for the sample(s).
+
+Example invocation:
+
+sgdemux \\
+  --fastqs R1.fq.gz R2.fq.gz I1.fq.gz \\
+  --read-structures +T +T 8B \\
+  --sample-metadata samples.csv \\
+  --output demuxed-fastqs/
+
+For complete documentation see: https://github.com/Singular-Genomics/singular-demux
+For support please contact: care@singulargenomics.com
+";
+
 #[derive(Parser, Debug)]
-#[clap(name = "demux", verbatim_doc_comment, version = built_info::VERSION.as_str())]
+#[clap(name = "sgdemux", version = built_info::VERSION.as_str(), about=SHORT_USAGE, long_about=LONG_USAGE, term_width=0)]
 pub struct Opts {
     /// Path to the input FASTQs.
-    #[clap(long, short = 'f', display_order = 1)]
+    #[clap(long, short = 'f', display_order = 1, required = true, multiple_values = true)]
     pub fastqs: Vec<PathBuf>,
 
     /// Path to the sample metadata.
@@ -150,7 +92,7 @@ pub struct Opts {
     pub sample_metadata: PathBuf,
 
     /// Read structures, one per input FASTQ.
-    #[clap(long, short = 'r', display_order = 3)]
+    #[clap(long, short = 'r', display_order = 3, required = true, multiple_values = true)]
     pub read_structures: Vec<ReadStructure>,
 
     /// The directory to write outputs, the directory must exist.
@@ -243,7 +185,7 @@ pub struct Opts {
     ///
     /// The number of threads to use for the process of determining which input reads should be assigned to which sample.
     #[clap(long, short = 't', default_value = "4", display_order = 31)]
-    pub deumux_threads: usize,
+    pub demux_threads: usize,
 
     /// Number of threads for compression the output reads.
     ///
@@ -318,7 +260,7 @@ impl Default for Opts {
             undetermined_sample_name: UNDETERMINED_NAME.to_string(),
             sample_metadata: PathBuf::default(),
             chunksize: NonZeroUsize::new(500).unwrap(),
-            deumux_threads: 16,
+            demux_threads: 16,
             compressor_threads: 4,
             writer_threads: 4,
             decompression_threads_per_reader: 4,
@@ -331,6 +273,8 @@ impl Default for Opts {
 /// Run demultiplexing.
 #[allow(clippy::too_many_lines)]
 pub fn run(opts: Opts) -> Result<(), anyhow::Error> {
+    print!("{}", LOGO);
+
     let read_filter_config = opts.as_read_filter_config();
 
     let output_types_to_write = opts.output_types_to_write()?;
@@ -420,7 +364,7 @@ pub fn run(opts: Opts) -> Result<(), anyhow::Error> {
             ThreadReader::new(f.clone(), opts.chunksize, opts.decompression_threads_per_reader)
         })
         .collect::<Vec<_>>();
-    let rpool = rayon::ThreadPoolBuilder::new().num_threads(opts.deumux_threads).build().unwrap();
+    let rpool = rayon::ThreadPoolBuilder::new().num_threads(opts.demux_threads).build().unwrap();
 
     let unmatched_counter = if opts.most_unmatched_to_output > 0 {
         Some(UnmatchedCounterThread::new(
@@ -591,6 +535,7 @@ mod test {
     };
 
     use fgoxide::io::{DelimFile, Io};
+    use itertools::Itertools;
     use read_structure::ReadStructure;
     use rstest::rstest;
     use seq_io::{fastq::OwnedRecord, BaseRecord};
@@ -649,7 +594,7 @@ mod test {
             read_structures: vec![read_structure],
             allowed_mismatches: 2,
             min_delta: 3,
-            deumux_threads: threads,
+            demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
             quality_mask_threshold: min_base_qual_for_masking,
@@ -832,7 +777,7 @@ mod test {
             read_structures: vec![read_structure],
             allowed_mismatches: 2,
             min_delta: 3,
-            deumux_threads: threads,
+            demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
             override_matcher: matcher,
@@ -1019,7 +964,7 @@ mod test {
             read_structures,
             allowed_mismatches: 2,
             min_delta: 3,
-            deumux_threads: threads,
+            demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
             override_matcher: matcher,
@@ -1096,7 +1041,7 @@ mod test {
             read_structures,
             allowed_mismatches: 2,
             min_delta: 3,
-            deumux_threads: threads,
+            demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
             override_matcher: matcher,
@@ -1152,7 +1097,7 @@ mod test {
             read_structures,
             allowed_mismatches: 2,
             min_delta: 3,
-            deumux_threads: threads,
+            demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
             override_matcher: matcher,
@@ -1218,7 +1163,7 @@ mod test {
             read_structures,
             allowed_mismatches: 2,
             min_delta: 3,
-            deumux_threads: threads,
+            demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
             override_matcher: matcher,
@@ -1352,7 +1297,7 @@ mod test {
             read_structures: vec![ReadStructure::from_str("17B39T").unwrap()],
             allowed_mismatches: 2,
             min_delta: 3,
-            deumux_threads: threads,
+            demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
             override_matcher: matcher,

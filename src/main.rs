@@ -2,7 +2,7 @@
 use std::process::exit;
 
 use log::error;
-use singular_demux_lib::run::{run, setup};
+use sgdemux_lib::run::{run, setup};
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
