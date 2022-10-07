@@ -13,8 +13,8 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            artifact_name: singular-demux
-            asset_name: singular-demux-linux-amd64
+            artifact_name: sgdemux
+            asset_name: sgdemux-linux-amd64
 
     steps:
       - uses: actions/checkout@v2
