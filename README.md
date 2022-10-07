@@ -8,10 +8,24 @@ This repository is home to the `sgdemux` tool for demultiplexing sequencing data
 
 See the separate [installation doc](docs/02_Installation.md) for instructions on how to install `sgdemux`.
 
-## Usage
+## Overview
 
 `sgdemux` performs sample demultiplexing on block-compressed (BGZF) FASTQs such as those produced by the Singular Genomics G4 platform.
 The input FASTQs _must_ be block compressed (e.g. with [`bgzip`](http://www.htslib.org/doc/bgzip.html)); uncompressed or non-bgzf gzipped input files are not supported as performance would be significantly degraded.
+
+The primary options that affect demultiplexing are `--allowed-mismatches` and `--min-delta`.  Together these specify a) how well a sample barcode in a sequencing read must match an expected barcode and b) how much worse the next best match must be.
+The default options of `--allowed-mismatches 1 --min-delta 2` will only match a set of FASTQ records to an expected barcode if, across all barcode reads, there is at most one mismatch vs. the expected barcode _and_ there are no matches to other expected barcodes with fewer than three mismatches.
+
+Several other options affect how demultiplexing is performed, and for these to be fully understood it is necessary to understand the order in which they are applied in the demultiplexing process.  Operations are ordered as follows:
+
+1. A record is read in from each of the input FASTQ files and broken into read "segments" using the supplied read structures.
+2. If `--filter-control-reads` is specified and the reads are marked as controls in the FASTQ header, the reads are discarded (i.e. they do not get written to _any_ output files).
+3. If `--filter-failing-quality` is specified and the reads are marked as quality failures in the FASTQ header, the reads are discarded (i.e. they do not get written to _any_ output files).
+4. If `--quality-mask-threshold` is set to a value higher than 0, all bases in all input reads (including sample barcodes and UMIs) that have base quality at or below the given threshold value are masked to `N`.
+5. Match the reads against the set of expected barcodes; if the sample barcode has more `N` bases in it that specified by `--max-no-calls` or does not match to an expected barcode within defined parameters, the reads will be assigned to the undetermined sample.
+6. Write out the subset of the FASTQs/read segments specified by `--output-types` to the FASTQ file(s) for the assigned sample.
+
+## Usage
 
 The primary inputs to the tool are:
 
@@ -42,7 +56,8 @@ The full set of FASTQ files generated for a run, or lane, or sequencing should b
   --fastqs R1.fastq.gz R2.fastq.gz I1.fastq.gz I2.fastq.gz
 ```
 
-If multiple FASTQ files are available per instrument reads, they should be concatenated prior to running `sgdemux`, e.g.:
+If multiple FASTQ files are available per instrument reads, they should be concatenated prior to running `sgdemux`.
+BGZF files, due to their block-compressed nature, can be concatenated simply using standard `cat`, e.g.:
 
 ```shell
 for read in R1 R2 I1 I2; do cat L*/${read}.fastq.gz > ./${read}.fastq.gz; done

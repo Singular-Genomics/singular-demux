@@ -308,7 +308,7 @@ where
 
     /// Process all bases and qualities for segments of the given `kind` from a `read`.
     ///
-    /// Processing here entails masking low quality bases, extracting the sgements that match the given `kind`
+    /// Processing here entails masking low quality bases, extracting the segments that match the given `kind`
     /// and generating an [`OwnedRecord`] with the processed and extracted bases and qualities.
     ///
     /// # Arguments
@@ -321,7 +321,7 @@ where
     /// # Returns
     ///
     /// Assuming no errors were encountered, a tuple is returned with the first value being an optional [`OwnedRecord`].
-    /// If the `kind` of segments being processed is one fo the [`Self::output_segment_types`], then an [`OwnedRecord`]
+    /// If the `kind` of segments being processed is one of the [`Self::output_segment_types`], then an [`OwnedRecord`]
     /// will be created. Otherwise it will be none.
     ///
     /// The second value in the tuple is the [`BaseQualCounter`] which aggregates metrics about the base qualities
