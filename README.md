@@ -26,7 +26,7 @@ An example invocation follows:
 
 ```shell
 sgdemux \
-  --fastqs R1.fastq.gz r2.fastq.gz I1.fastq.gz I2.fastq.gz \
+  --fastqs R1.fastq.gz R2.fastq.gz I1.fastq.gz I2.fastq.gz \
   --read-structures +T +T 8B 8B \
   --sample-metadata sample-metadata.csv \
   --output-dir demuxed/
@@ -39,7 +39,7 @@ sgdemux \
 The full set of FASTQ files generated for a run, or lane, or sequencing should be provided, including all template and index reads.  For example if a paired-end sequencing run was performed with dual sample index reads, four files should be provided:
 
 ```shell
-  --fastqs R1.fastq.gz r2.fastq.gz I1.fastq.gz I2.fastq.gz
+  --fastqs R1.fastq.gz R2.fastq.gz I1.fastq.gz I2.fastq.gz
 ```
 
 If multiple FASTQ files are available per instrument reads, they should be concatenated prior to running `sgdemux`, e.g.:
@@ -62,7 +62,7 @@ Read Structures are short strings that describe the origin and/or purpose of bas
 The last `<number><operator>` pair in a Read Structure may use `+` instead of a number to denote "all remaining bases".
 This is useful if, e.g., FASTQs have been trimmed and/or contain reads of varying length. 
 
-For more dteails on Read Structures, and how to validate them, see [this detailed description](https://github.com/fulcrumgenomics/fgbio/wiki/Read-Structures).
+For more details on Read Structures, and how to validate them, see [this detailed description](https://github.com/fulcrumgenomics/fgbio/wiki/Read-Structures).
 
 One Read Structure must be provided for each input FASTQ file, in the same order.  Matching the set of reads specified in the FASTQ files section above one might specify:
 
@@ -86,7 +86,7 @@ If multiple sample barcodes are are present (e.g. dual-indexing runs, additional
 
 For example if a dual-indexing run was performed with an additional inline sample barcode in read 1, and `sgdemux` was invoked with the following options:
 
-```shell
+```console
 --fastqs R1.fastq.gz I1.fastq.gz I2.fastq.gz R2.fastq.gz \
 --read-structures 10B+T 8B 8B +T
 ```
@@ -99,26 +99,26 @@ then the `Sample_Barcode` field for each sample should be composed as follows:
 
 ##### Full Argument List
 
-|Argument Name|Required|Default Value|Description|
-|-------------|--------|-------------|-----------|
-|--fastqs                  |Yes|n/a         |Path(s) to the input FASTQs to be demultiplexed.|
-|--sample-metadata         |Yes|n/a         |Path to CSV of sample metadata with sample IDs and barcode sequences.|
-|--read-structures         |Yes|n/a         |One read structure per input FASTQ describing how to parse the reads.|
-|--output-dir              |Yes|n/a         |Path to an output directory to write into. Directory must exist.|
-|--filter-control-reads    |No |False       |If true, filter out reads marked as control reads in their FASTQ headers.|
-|--filter-failing-quality  |No |False       |If true, filter out reads marked as failing quality control in their FASTQ headers.|
-|--allowed-mismatches      |No |1           |The number of mismatches allowed, in total, between expected and observed barcode bases in order to match a read to a sample.|
-|--min-delta               |No |2           |The minimum number of mismatches by which the best match for a read is better than the next-best match for a read in order to accept the best match.|
-|--free-ns                 |No |1           |The number of observed Ns (no-calls) in the barcode read(s) that are allowed for "free" before treating subsequent Ns as mismatches.|
-|--max-no-calls            |No |n/a         |If specified, do not match any reads whose barcode reads contain more than this many Ns.|
-|--quality-mask-threshold  |No |0           |Mask to N all bases in all reads whose base quality is at or below the specified value.|
-|--output-types            |No |T           |The types of bases/reads for which output files should be generated. A single string containing one or more of `T` (template), `B` (sample barcode), `M` (UMI), and `S` (skipped).|
-|--undetermined-sample-name|No |Undetermined|The name used as a prefix to generate FASTQ files for reads that didn't match to any sample.|
-|--compressor-threads      |No |12          |The number of threads to use in compressing the output FASTQ files.|
-|--deumux-threads          |No |4           |The number of threads to use to perform demultiplexing in memory.|
-|--writer-threads          |No |5           |The number of threads to use to write compressed FASTQ data to disk.|
-|--override-matcher        |No |n/a         |The algorithm to use for matching, either `CachedHammingDistance` or `PreCompute`.  By default if barcodes are 12bp or shorter `PreCompute` is used which pre-computes all possible matches, or if barcodes are longer than 12bp `CachedHammingDistance` is used which calculates matches when needed then caches the results.|
-|--most-unmatched-to-output|No |1000        |Report on the top N most frequently observed unmatched barcode sequences.|
+|Argument Name|Required|Default Value| Description                                                                                                                                                                                                                                                                                                                    |
+|-------------|--------|-------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|--fastqs                  |Yes|n/a         | Path(s) to the input FASTQs to be demultiplexed.                                                                                                                                                                                                                                                                               |
+|--sample-metadata         |Yes|n/a         | Path to CSV of sample metadata with sample IDs and barcode sequences.                                                                                                                                                                                                                                                          |
+|--read-structures         |Yes|n/a         | One read structure per input FASTQ, in the same order, describing how to parse the reads.                                                                                                                                                                                                                                      |
+|--output-dir              |Yes|n/a         | Path to an output directory to write into. Directory must exist.                                                                                                                                                                                                                                                               |
+|--filter-control-reads    |No |False       | If true, filter out reads marked as control reads in their FASTQ headers.                                                                                                                                                                                                                                                      |
+|--filter-failing-quality  |No |False       | If true, filter out reads marked as failing quality control in their FASTQ headers.                                                                                                                                                                                                                                            |
+|--allowed-mismatches      |No |1           | The number of mismatches allowed, in total, between expected and observed barcode bases in order to match a read to a sample.                                                                                                                                                                                                  |
+|--min-delta               |No |2           | The minimum number of mismatches by which the best match for a read is better than the next-best match for a read in order to accept the best match.                                                                                                                                                                           |
+|--free-ns                 |No |1           | The number of observed Ns (no-calls) in the barcode read(s) that are allowed for "free" before treating subsequent Ns as mismatches.                                                                                                                                                                                           |
+|--max-no-calls            |No |n/a         | If specified, do not match any reads whose barcode reads contain more than this many Ns.                                                                                                                                                                                                                                       |
+|--quality-mask-threshold  |No |0           | Mask to N all bases in all reads whose base quality is at or below the specified value.                                                                                                                                                                                                                                        |
+|--output-types            |No |T           | The types of bases/reads for which output files should be generated. A single string containing one or more of `T` (template), `B` (sample barcode), `M` (UMI), and `S` (skipped).                                                                                                                                             |
+|--undetermined-sample-name|No |Undetermined| The name used as a prefix to generate FASTQ files for reads that didn't match to any sample.                                                                                                                                                                                                                                   |
+|--compressor-threads      |No |12          | The number of threads to use in compressing the output FASTQ files.                                                                                                                                                                                                                                                            |
+|--demux-threads          |No |4           | The number of threads to use to perform demultiplexing in memory.                                                                                                                                                                                                                                                              |
+|--writer-threads          |No |5           | The number of threads to use to write compressed FASTQ data to disk.                                                                                                                                                                                                                                                           |
+|--override-matcher        |No |n/a         | The algorithm to use for matching, either `CachedHammingDistance` or `PreCompute`.  By default if barcodes are 12bp or shorter `PreCompute` is used which pre-computes all possible matches, or if barcodes are longer than 12bp `CachedHammingDistance` is used which calculates matches when needed then caches the results. |
+|--most-unmatched-to-output|No |1000        | Report on the top N most frequently observed unmatched barcode sequences.                                                                                                                                                                                                                                                      |
 
 
 ##### Performance Considerations
@@ -151,7 +151,7 @@ sg001:17:A30ZZ:1:4:1234:4567:ACCTAG+TCCTGG 1:N:1:ACGT+TTGA
 
 Up to four metrics files are generated to help assess run and demultiplexing quality:
 
-##### `per_sample_metrics.tsv` 
+###### `per_sample_metrics.tsv` 
 
 This file is always produced and contains the following columns:
 
@@ -172,7 +172,7 @@ This file is always produced and contains the following columns:
 |`frac_q30_bases`|The fraction of bases in a template with a quality score 30 or above.|
 |`mean_index_base_quality`|The mean quality of index bases.|
 
-##### `run_metrics.tsv`
+###### `run_metrics.tsv`
 
 This file is always produced and contains a small number of summary statistics across the demultiplexing run:
 
@@ -182,7 +182,7 @@ This file is always produced and contains a small number of summary statistics a
 |`failing_reads_omitted`|The number of reads that were omitted for having failed QC.|
 |`total_templates`|The total number of template reads that were output.|
 
-##### `most_frequent_unmatched.tsv`
+###### `most_frequent_unmatched.tsv`
 
 This file is optional and will only be produced if `--most-unmatched-to-output` is not set to zero. It contains the (approximate) counts of the most prevelant observed barcode sequences that did not match to one of the expected barcodes.
 
@@ -191,7 +191,7 @@ This file is optional and will only be produced if `--most-unmatched-to-output` 
 |`barcode`|The observed barcode sequence.|
 |`count`|The approximate number of times that barcode sequences was observed.|
 
-##### `sample_barcode_hop_metrics.tsv`
+###### `sample_barcode_hop_metrics.tsv`
 
 This file is only output for dual-indexed runs.  It contains frequently observed barcodes that are unexpected combinations of expected barcodes.  For example if two samples are present with barcodes `AA-CC` and `GG-TT`, this file would report on observations of `AA-TT` and `GG-CC` if seen.
 

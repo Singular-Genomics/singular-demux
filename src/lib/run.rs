@@ -271,7 +271,7 @@ impl Default for Opts {
 /// Run demultiplexing.
 #[allow(clippy::too_many_lines)]
 pub fn run(opts: Opts) -> Result<(), anyhow::Error> {
-    print!("{}", LOGO);
+    eprint!("{}", LOGO);
 
     let read_filter_config = opts.as_read_filter_config();
 
@@ -533,7 +533,6 @@ mod test {
     };
 
     use fgoxide::io::{DelimFile, Io};
-    use itertools::Itertools;
     use read_structure::ReadStructure;
     use rstest::rstest;
     use seq_io::{fastq::OwnedRecord, BaseRecord};
