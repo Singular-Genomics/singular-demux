@@ -574,7 +574,6 @@ mod test {
     fn test_end_to_end_with_quality_threshold(
         min_base_qual_for_masking: u8,
         threads: usize,
-        matcher: Option<MatcherKind>,
     ) -> Vec<OwnedRecord> {
         let dir = tempfile::tempdir().unwrap();
         let read_structure = ReadStructure::from_str("17B39T").unwrap();
@@ -595,7 +594,6 @@ mod test {
             compressor_threads: threads,
             writer_threads: threads,
             quality_mask_threshold: min_base_qual_for_masking,
-            override_matcher: matcher,
             ..Opts::default()
         };
 
@@ -616,13 +614,11 @@ mod test {
         #[case] quality: u8,
         #[case] threads: usize,
         #[case] expected: &[u8],
-        #[values(None, Some(MatcherKind::PreCompute), Some(MatcherKind::CachedHammingDistance))]
-        matcher: Option<MatcherKind>,
     ) {
         // https://github.com/fulcrumgenomics/fgbio/blob/ed906cd29a7f38c9da0583c8307dc7fbcd94880b/src/test/scala/com/fulcrumgenomics/fastq/DemuxFastqsTest.scala#L470
         // Note that this tool masks anything less than or equal to the quality threshold, but fgbio masks only less than
         // so this will mask one more base than fgbio
-        let records = test_end_to_end_with_quality_threshold(quality, threads, matcher);
+        let records = test_end_to_end_with_quality_threshold(quality, threads);
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].seq, expected);
     }
@@ -642,8 +638,6 @@ mod test {
     #[case(vec![ReadStructure::from_str("18B100T").unwrap()])]
     fn test_read_structure_failures(
         #[case] read_structures: Vec<ReadStructure>,
-        #[values(None, Some(MatcherKind::PreCompute), Some(MatcherKind::CachedHammingDistance))]
-        matcher: Option<MatcherKind>,
     ) {
         let dir = tempfile::tempdir().unwrap();
         let input = fastq_path_single(&dir.path());
@@ -659,7 +653,6 @@ mod test {
             read_structures,
             allowed_mismatches: 2,
             min_delta: 3,
-            override_matcher: matcher,
             ..Opts::default()
         };
         run(opts).unwrap();
@@ -755,8 +748,6 @@ mod test {
     #[rstest]
     fn test_end_to_end_simple(
         #[values(1, 2)] threads: usize,
-        #[values(None, Some(MatcherKind::PreCompute), Some(MatcherKind::CachedHammingDistance))]
-        matcher: Option<MatcherKind>,
         #[values("T", "B", "TB")] output_types: String,
     ) {
         let dir = tempfile::tempdir().unwrap();
@@ -777,8 +768,7 @@ mod test {
             demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
-            override_matcher: matcher,
-            output_types: output_types,
+            output_types,
             ..Opts::default()
         };
 
@@ -869,8 +859,6 @@ mod test {
         #[values(1, 2)] threads: usize,
         #[values(true, false)] omit_failing_reads: bool,
         #[values(true, false)] omit_control_reads: bool,
-        #[values(None, Some(MatcherKind::PreCompute), Some(MatcherKind::CachedHammingDistance))]
-        matcher: Option<MatcherKind>,
     ) {
         let dir = tempfile::tempdir().unwrap();
         let read_structures = vec![
@@ -964,7 +952,6 @@ mod test {
             demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
-            override_matcher: matcher,
             filter_control_reads: omit_control_reads,
             filter_failing_quality: omit_failing_reads,
             ..Opts::default()
@@ -1005,8 +992,6 @@ mod test {
     #[rstest]
     fn test_demux_fragment_reads_with_standard_qualities(
         #[values(1, 2)] threads: usize,
-        #[values(None, Some(MatcherKind::PreCompute), Some(MatcherKind::CachedHammingDistance))]
-        matcher: Option<MatcherKind>,
     ) {
         let dir = tempfile::tempdir().unwrap();
         let read_structures = vec![ReadStructure::from_str("4B+T").unwrap()];
@@ -1041,7 +1026,6 @@ mod test {
             demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
-            override_matcher: matcher,
             ..Opts::default()
         };
 
@@ -1060,8 +1044,6 @@ mod test {
     )]
     fn test_demux_should_fail_if_one_fastq_has_fewer_records_than_the_other(
         #[values(1, 2)] threads: usize,
-        #[values(None, Some(MatcherKind::PreCompute), Some(MatcherKind::CachedHammingDistance))]
-        matcher: Option<MatcherKind>,
     ) {
         fn to_fq(i: usize) -> OwnedRecord {
             Fq {
@@ -1097,7 +1079,6 @@ mod test {
             demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
-            override_matcher: matcher,
             ..Opts::default()
         };
 
@@ -1108,8 +1089,6 @@ mod test {
     #[allow(clippy::too_many_lines)]
     fn test_demux_dual_index_paired_end_reads(
         #[values(1, 2)] threads: usize,
-        #[values(None, Some(MatcherKind::PreCompute), Some(MatcherKind::CachedHammingDistance))]
-        matcher: Option<MatcherKind>,
     ) {
         let dir = tempfile::tempdir().unwrap();
         let fq1_path = dir.path().join("fq1.fastq.gz");
@@ -1163,7 +1142,6 @@ mod test {
             demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
-            override_matcher: matcher,
             filter_control_reads: false,
             ..Opts::default()
         };
@@ -1244,8 +1222,6 @@ mod test {
         #[values(1, 2)] threads: usize,
         #[values(true, false)] omit_failing_reads: bool,
         #[values(true, false)] omit_control_reads: bool,
-        #[values(None, Some(MatcherKind::PreCompute), Some(MatcherKind::CachedHammingDistance))]
-        matcher: Option<MatcherKind>,
     ) {
         let dir = tempfile::tempdir().unwrap();
         let output = dir.path().join("output");
@@ -1297,7 +1273,6 @@ mod test {
             demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
-            override_matcher: matcher,
             filter_control_reads: omit_control_reads,
             filter_failing_quality: omit_failing_reads,
             ..Opts::default()
