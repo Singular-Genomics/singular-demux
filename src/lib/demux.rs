@@ -308,7 +308,7 @@ where
 
     /// Process all bases and qualities for segments of the given `kind` from a `read`.
     ///
-    /// Processing here entails masking low quality bases, extracting the sgements that match the given `kind`
+    /// Processing here entails masking low quality bases, extracting the segments that match the given `kind`
     /// and generating an [`OwnedRecord`] with the processed and extracted bases and qualities.
     ///
     /// # Arguments
@@ -321,7 +321,7 @@ where
     /// # Returns
     ///
     /// Assuming no errors were encountered, a tuple is returned with the first value being an optional [`OwnedRecord`].
-    /// If the `kind` of segments being processed is one fo the [`Self::output_segment_types`], then an [`OwnedRecord`]
+    /// If the `kind` of segments being processed is one of the [`Self::output_segment_types`], then an [`OwnedRecord`]
     /// will be created. Otherwise it will be none.
     ///
     /// The second value in the tuple is the [`BaseQualCounter`] which aggregates metrics about the base qualities
@@ -1106,17 +1106,14 @@ mod test {
 
     #[rstest]
     #[rustfmt::skip]
-    fn test_demux_assigns_to_unmatched_if_read_matches_to_sample_barcodes_within_mismatch_delta(
-        #[values(MatcherKind::CachedHammingDistance, MatcherKind::PreCompute)]
-        matcher: MatcherKind
-    ) {
+    fn test_demux_assigns_to_unmatched_if_read_matches_to_sample_barcodes_within_mismatch_delta() {
         let read_structures = vec![
             ReadStructure::from_str("17B100T").unwrap(),
         ];
 
         let fq1 = Fq { name: "pair", bases: &[SAMPLE_BARCODE_4, &[b'A'; 100]].concat(), ..Fq::default() }.to_owned_record();
 
-        let context = DemuxTestContext::demux_mismatches(vec![fq1], read_structures, 2, 3, Some(1), matcher);
+        let context = DemuxTestContext::demux_mismatches(vec![fq1], read_structures, 2, 3, Some(1), MatcherKind::CachedHammingDistance);
         let demuxer = context.demux();
         let result = demuxer.demultiplex(&context.per_fastq_record_set).unwrap();
         assert!(result.per_sample_reads[0..4].iter().all(demux::OutputPerSampleReads::is_empty), "Samples 1-4 have no reads assigned");

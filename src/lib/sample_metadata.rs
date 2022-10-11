@@ -173,7 +173,12 @@ impl SampleMetadata {
     }
     /// Sanitize a barcode sequence to remove any symbols other than `ACTG`.
     pub fn sanitize_barcode(raw_barcode: &BStr) -> BString {
-        raw_barcode.iter().filter(|&b| ALLOWED_BASES.contains(b)).copied().collect()
+        raw_barcode
+            .to_ascii_uppercase()
+            .iter()
+            .filter(|&b| ALLOWED_BASES.contains(b))
+            .copied()
+            .collect()
     }
 
     /// Validate a collection of [`SampleMetadata`] barcodes by checking that all sample barcodes

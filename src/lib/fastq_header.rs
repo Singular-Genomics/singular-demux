@@ -36,7 +36,7 @@
 //! The primary usage of this library is via the [`FastqHeader::try_from`] method:
 //!
 //! ```rust
-//! use singular_demux_lib::fastq_header::FastqHeader;
+//! use sgdemux_lib::fastq_header::FastqHeader;
 //! let header = "H00233:4:AAAFGW3HV:1:1101:59586:1000:NNNN 1:N:0:GCATAAGCTT+GGCGACGGAA";
 //! let mut header = FastqHeader::try_from(header.as_bytes()).unwrap();
 //! header.set_umi("AAAA".as_bytes());
