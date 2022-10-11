@@ -146,7 +146,6 @@ impl SampleMetadata {
         barcode: BString,
         number: usize,
     ) -> Result<Self, SampleMetadataError> {
-        Self::validate_barcode(barcode.as_ref(), &sample_id, None)?;
         Ok(Self { sample_id, raw_barcode: barcode.clone(), barcode, ordinal: number })
     }
 
@@ -250,7 +249,6 @@ impl AsRef<SampleMetadata> for SampleMetadata {
 pub fn from_path<P: AsRef<Path>>(
     path: P,
     min_mismatch: Option<usize>,
-    include_undetermined: bool,
     undetermined_name: &str,
 ) -> Result<Vec<SampleMetadata>, SampleMetadataError> {
     let mut reader = csv::ReaderBuilder::new().has_headers(true).delimiter(b',').from_path(path)?;
@@ -262,7 +260,6 @@ pub fn from_path<P: AsRef<Path>>(
         let mut record: SampleMetadata = record
             .map_err(|e| SampleMetadataError::DeserializeRecord { source: e, line: number + 2 })?;
         let fixed = SampleMetadata::sanitize_barcode(record.raw_barcode.as_ref());
-        SampleMetadata::validate_barcode(fixed.as_ref(), &record.sample_id, Some(number + 2))?;
         if !ids.insert(record.sample_id.clone()) {
             return Err(SampleMetadataError::DuplicateSampleId { id: record.sample_id });
         }
@@ -271,15 +268,24 @@ pub fn from_path<P: AsRef<Path>>(
         records.push(record);
     }
 
-    if let Some(min_mismatch) = min_mismatch {
-        SampleMetadata::validate_barcode_pairs(&records, min_mismatch)?;
-    }
-
     if records.is_empty() {
         return Err(SampleMetadataError::ZeroSamples);
     }
+    else if records.len() > 1 {
+        // Only validate barcodes if we have more than one sample, since we allow an empty
+        // barcode on a single sample.
+        for sample in records.iter() {
+            SampleMetadata::validate_barcode(sample.barcode.as_ref(), &sample.sample_id, Some(sample.ordinal + 2))?;
+        }
 
-    if include_undetermined {
+        if let Some(min_mismatch) = min_mismatch {
+            SampleMetadata::validate_barcode_pairs(&records, min_mismatch)?;
+        }
+    }
+
+    // If we have more than one sample, or we have one sample with an actual barcode
+    // then add in the undetermined sample.
+    if records.len() > 1 || records[0].barcode.len() > 0 {
         records.push(SampleMetadata::new_allow_invalid_bases(
             String::from(undetermined_name),
             BString::from(vec![b'N'; records[0].barcode.len()]),
@@ -317,6 +323,7 @@ mod tests {
 
     use super::*;
     use std::fs;
+    use itertools::Itertools;
 
     #[test]
     fn test_all_valid_data() {
@@ -331,7 +338,9 @@ mod tests {
 
         to_path(&input_path, samples.iter()).unwrap();
 
-        let found_samples = from_path(&input_path, None, false, UNDETERMINED_NAME).unwrap();
+        let found_samples = from_path(&input_path, None, UNDETERMINED_NAME)
+            .unwrap().into_iter().filter(|s| s.sample_id != UNDETERMINED_NAME).collect_vec();
+
         assert_eq!(found_samples.len(), 4, "Found wrong number of serialized samples.");
         for (found, expected) in found_samples.iter().zip(samples.iter()) {
             assert_eq!(found, expected);
@@ -351,7 +360,7 @@ mod tests {
 
         to_path(&input_path, samples.iter()).unwrap();
 
-        let r = from_path(&input_path, Some(1), false, UNDETERMINED_NAME);
+        let r = from_path(&input_path, Some(1), UNDETERMINED_NAME);
         assert_matches!(r, Err(SampleMetadataError::UnequalBarcodeLengths { .. }));
     }
 
@@ -373,7 +382,7 @@ mod tests {
         ];
 
         to_path(&input_path, samples.iter()).unwrap();
-        let r = from_path(&input_path, Some(1), false, UNDETERMINED_NAME);
+        let r = from_path(&input_path, Some(1), UNDETERMINED_NAME);
 
         assert_matches!(r, Err(SampleMetadataError::InvalidBarcode { .. }));
         if let Err(SampleMetadataError::InvalidBarcode { barcode, id, reason, line }) = r {
@@ -400,7 +409,7 @@ mod tests {
         to_path(&input_path, samples.iter()).unwrap();
 
         assert_matches!(
-            from_path(&input_path, None, false, UNDETERMINED_NAME),
+            from_path(&input_path, None, UNDETERMINED_NAME),
             Err(SampleMetadataError::DuplicateSampleId { .. })
         );
     }
@@ -420,7 +429,7 @@ mod tests {
         to_path(&input_path, samples.iter()).unwrap();
 
         assert_matches!(
-            from_path(&input_path, Some(2), false, UNDETERMINED_NAME),
+            from_path(&input_path, Some(2), UNDETERMINED_NAME),
             Err(SampleMetadataError::BarcodeCollision { .. })
         );
     }
@@ -444,9 +453,10 @@ Sample2,GGGG
         let expected = vec![
             SampleMetadata::new(String::from("Sample1"), BString::from("ACTG"), 0).unwrap(),
             SampleMetadata::new(String::from("Sample2"), BString::from("GGGG"), 1).unwrap(),
+            SampleMetadata::new_allow_invalid_bases(UNDETERMINED_NAME.to_string(), BString::from("NNNN"), 2).unwrap()
         ];
 
-        assert_eq!(from_path(&input_path, Some(1), false, UNDETERMINED_NAME).unwrap(), expected);
+        assert_eq!(from_path(&input_path, Some(1), UNDETERMINED_NAME).unwrap(), expected);
     }
 
     #[test]
@@ -465,7 +475,7 @@ Sample2,GGGG
         fs::write(&input_path, bytes).unwrap();
         // Failes with barcode empty error
         assert_matches!(
-            from_path(&input_path, Some(1), false, UNDETERMINED_NAME),
+            from_path(&input_path, Some(1), UNDETERMINED_NAME),
             Err(SampleMetadataError::InvalidBarcode { .. })
         );
     }
