@@ -566,7 +566,7 @@ mod test {
             quals: Some(&[&[b'?'; 17], SINGLE_FASTQ_QUAL_RANGE].concat()),
             ..Fq::default()
         }
-        .to_owned_record();
+            .to_owned_record();
         write_reads_to_file(std::iter::once(record), &path);
         path
     }
@@ -604,12 +604,12 @@ mod test {
     }
 
     #[rstest]
-    #[case(0, 1, &[b'A'; 39])]
-    #[case(10, 1, &[[b'N'; 9].as_slice(), &[b'A'; 30]].concat())]
-    #[case(0, 2, &[b'A'; 39])]
-    #[case(10, 2, &[[b'N'; 9].as_slice(), &[b'A'; 30]].concat())]
-    #[case(39, 2, &[[b'N'; 38].as_slice(), &[b'A'; 1]].concat())]
-    #[case(100, 2, &[b'N'; 39])]
+    #[case(0, 1, & [b'A'; 39])]
+    #[case(10, 1, & [[b'N'; 9].as_slice(), & [b'A'; 30]].concat())]
+    #[case(0, 2, & [b'A'; 39])]
+    #[case(10, 2, & [[b'N'; 9].as_slice(), & [b'A'; 30]].concat())]
+    #[case(39, 2, & [[b'N'; 38].as_slice(), & [b'A'; 1]].concat())]
+    #[case(100, 2, & [b'N'; 39])]
     fn test_run_end_to_end_with_quality_threshold(
         #[case] quality: u8,
         #[case] threads: usize,
@@ -625,17 +625,17 @@ mod test {
 
     #[rstest]
     #[should_panic(expected = "Same number of read structures should be given as FASTQs")]
-    #[case(vec![ReadStructure::from_str("8B100T").unwrap(), ReadStructure::from_str("100T").unwrap()])]
+    #[case(vec ! [ReadStructure::from_str("8B100T").unwrap(), ReadStructure::from_str("100T").unwrap()])]
     #[should_panic(expected = "No sample barcodes found in read structures")]
-    #[case(vec![ReadStructure::from_str("100T").unwrap()])]
+    #[case(vec ! [ReadStructure::from_str("100T").unwrap()])]
     #[should_panic(expected = "No templates found in read structures")]
-    #[case(vec![ReadStructure::from_str("8B").unwrap()])]
+    #[case(vec ! [ReadStructure::from_str("8B").unwrap()])]
     #[should_panic(expected = "Same number of read structures should be given as FASTQs")]
-    #[case(vec![ReadStructure::from_str("8B92T").unwrap(), ReadStructure::from_str("100T").unwrap(), ReadStructure::from_str("100T").unwrap()])]
+    #[case(vec ! [ReadStructure::from_str("8B92T").unwrap(), ReadStructure::from_str("100T").unwrap(), ReadStructure::from_str("100T").unwrap()])]
     #[should_panic(
-        expected = "The number of sample barcode bases in read structures does not match sample metadata"
+    expected = "The number of sample barcode bases in read structures does not match sample metadata"
     )]
-    #[case(vec![ReadStructure::from_str("18B100T").unwrap()])]
+    #[case(vec ! [ReadStructure::from_str("18B100T").unwrap()])]
     fn test_read_structure_failures(
         #[case] read_structures: Vec<ReadStructure>,
     ) {
@@ -660,7 +660,7 @@ mod test {
 
     #[rstest]
     #[should_panic(
-        expected = " Invalid barcode sequence for Sample5 `` - Barcode is an empty string. Line 6"
+    expected = " Invalid barcode sequence for Sample5 `` - Barcode is an empty string. Line 6"
     )]
     fn test_missing_barcode_in_sample_metadata() {
         let dir = tempfile::tempdir().unwrap();
@@ -697,35 +697,35 @@ mod test {
                 bases: &[SAMPLE_BARCODE_1, &[b'A'; 100]].concat(),
                 ..Fq::default()
             }
-            .to_owned_record(),
+                .to_owned_record(),
             Fq {
                 name: "frag2", // matches the first sample, one mismatch -> first sample
                 comment: Some("2:Y:0:SampleNumber"),
                 bases: &[b"AAAAAAAAGATTACAGT".as_slice(), &[b'A'; 100]].concat(),
                 ..Fq::default()
             }
-            .to_owned_record(),
+                .to_owned_record(),
             Fq {
                 name: "frag3", // matches the first sample, three mismatches -> unmatched
                 comment: Some("3:Y:0:SampleNumber"),
                 bases: &[b"AAAAAAAAGATTACTTT".as_slice(), &[b'A'; 100]].concat(),
                 ..Fq::default()
             }
-            .to_owned_record(),
+                .to_owned_record(),
             Fq {
                 name: "frag4", // matches the fourth sample perfectly and 3rd barcode with two mismathces, delta too small -> unmatched
                 comment: Some("4:Y:0:SampleNumber"),
                 bases: &[SAMPLE_BARCODE_4, &[b'A'; 100]].concat(),
                 ..Fq::default()
             }
-            .to_owned_record(),
+                .to_owned_record(),
             Fq {
                 name: "frag5", // matches the first sample, too many Ns -> unmatched
                 comment: Some("5:Y:0:SampleNumber"),
                 bases: &[b"AAAAAAAAGANNNNNNN".as_slice(), &[b'A'; 100]].concat(),
                 ..Fq::default()
             }
-            .to_owned_record(),
+                .to_owned_record(),
         ];
 
         write_reads_to_file(records.into_iter(), &path);
@@ -778,7 +778,7 @@ mod test {
             true,
             &opts.undetermined_sample_name,
         )
-        .unwrap();
+            .unwrap();
 
         let output_types_to_write = opts.output_types_to_write().unwrap();
 
@@ -879,35 +879,35 @@ mod test {
                 bases: &[SAMPLE_BARCODE_1, &[b'A'; 100]].concat(),
                 ..Fq::default()
             }
-            .to_owned_record(),
+                .to_owned_record(),
             Fq {
                 name: "2", // matches the first sample, one mismatch -> first sample
                 comment: Some("2:N:0:SampleNumber"),
                 bases: &[b"AAAAAAAAGATTACAGT".as_slice(), &[b'A'; 100]].concat(),
                 ..Fq::default()
             }
-            .to_owned_record(),
+                .to_owned_record(),
             Fq {
                 name: "3", // matches the first sample, three mismatches -> unmatched
                 comment: Some(&format!("3:N:{}:SampleNumber", control_flag)),
                 bases: &[b"AAAAAAAAGATTACTTT".as_slice(), &[b'A'; 100]].concat(),
                 ..Fq::default()
             }
-            .to_owned_record(),
+                .to_owned_record(),
             Fq {
                 name: "4", // matches the fourth sample perfectly and 3rd barcode with two mismatches, delta too small -> unmatched
                 comment: Some("4:N:0:SampleNumber"),
                 bases: &[SAMPLE_BARCODE_4, &[b'A'; 100]].concat(),
                 ..Fq::default()
             }
-            .to_owned_record(),
+                .to_owned_record(),
             Fq {
                 name: "5", // matches the first sample, too many Ns -> unmatched
                 comment: Some("5:N:0:SampleNumber"),
                 bases: &[b"AAAAAAAAGANNNNNNN".as_slice(), &[b'A'; 100]].concat(),
                 ..Fq::default()
             }
-            .to_owned_record(),
+                .to_owned_record(),
         ];
 
         let barcodes_per_sample = vec![
@@ -963,7 +963,7 @@ mod test {
             true,
             &opts.undetermined_sample_name,
         )
-        .unwrap();
+            .unwrap();
 
         run(opts).unwrap();
 
@@ -1004,7 +1004,7 @@ mod test {
             quals: Some(b"1>1>11AFF?FFGGGGGGCBDGBGCFGH11B"),
             ..Fq::default()
         }
-        .to_owned_record();
+            .to_owned_record();
         let input = dir.path().join("test.fastq.gz");
         write_reads_to_file(std::iter::once(fq.clone()), &input);
         let delim = DelimFile::default();
@@ -1040,7 +1040,7 @@ mod test {
 
     #[rstest]
     #[should_panic(
-        expected = "Unequal number of reads in each record set (likely uneven input FASTQs)"
+    expected = "Unequal number of reads in each record set (likely uneven input FASTQs)"
     )]
     fn test_demux_should_fail_if_one_fastq_has_fewer_records_than_the_other(
         #[values(1, 2)] threads: usize,
@@ -1051,7 +1051,7 @@ mod test {
                 bases: &[SAMPLE_BARCODE_1, &[b'A'; 100]].concat(),
                 ..Fq::default()
             }
-            .to_owned_record()
+                .to_owned_record()
         }
 
         let dir = tempfile::tempdir().unwrap();
@@ -1152,7 +1152,7 @@ mod test {
             true,
             &opts.undetermined_sample_name,
         )
-        .unwrap();
+            .unwrap();
         run(opts).unwrap();
 
         for (i, sample) in samples.iter().enumerate() {
@@ -1235,7 +1235,7 @@ mod test {
                 comment: Some("1:Y:0:SampleNumber"),
                 ..Fq::default()
             }
-            .to_owned_record(),
+                .to_owned_record(),
             Fq {
                 name: "frag2",
                 bases: &[SAMPLE_BARCODE_1, &[b'G'; 39]].concat(),
@@ -1243,7 +1243,7 @@ mod test {
                 comment: Some("2:N:0:SampleNumber"),
                 ..Fq::default()
             }
-            .to_owned_record(),
+                .to_owned_record(),
             Fq {
                 name: "frag3",
                 bases: &[SAMPLE_BARCODE_1, &[b'G'; 39]].concat(),
@@ -1251,7 +1251,7 @@ mod test {
                 comment: Some("3:Y:1:SampleNumber"),
                 ..Fq::default()
             }
-            .to_owned_record(),
+                .to_owned_record(),
             Fq {
                 name: "frag4",
                 bases: &[SAMPLE_BARCODE_1, &[b'G'; 39]].concat(),
@@ -1259,7 +1259,7 @@ mod test {
                 comment: Some("4:N:1:SampleNumber"),
                 ..Fq::default()
             }
-            .to_owned_record(),
+                .to_owned_record(),
         ];
         write_reads_to_file(fastqs.into_iter(), &fq_path);
         let metadata = create_preset_sample_metadata_file(&dir.path());
@@ -1284,7 +1284,7 @@ mod test {
             true,
             &opts.undetermined_sample_name,
         )
-        .unwrap();
+            .unwrap();
 
         run(opts).unwrap();
 
@@ -1355,5 +1355,57 @@ mod test {
 
         let most_frequent_unmatched: Vec<BarcodeCount> = delim.read_tsv(&most_unmatched).unwrap();
         assert_eq!(most_frequent_unmatched.len(), 0);
+    }
+
+    #[rstest]
+    #[allow(clippy::too_many_lines)]
+    fn test_end_to_end_with_all_matchers(
+        #[values(None, Some(MatcherKind::PreCompute), Some(MatcherKind::CachedHammingDistance))]
+        matcher: Option<MatcherKind>,
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let fq_path = dir.path().join("fq1.fastq.gz");
+        let metadata_path = dir.path().join("metadata.csv");
+        let output_path = dir.path().join("output");
+
+        let reads = vec![
+            Fq { name: "q1", bases: b"AAAAAAAACGACTCGTCATGA", ..Fq::default() }.to_owned_record(),
+            Fq { name: "q2", bases: b"AAAATAAAATATCGCGTCTAT", ..Fq::default() }.to_owned_record(),
+            Fq { name: "q3", bases: b"ACAAATAACCGTATCGGCTTA", ..Fq::default() }.to_owned_record(),
+        ];
+
+        write_reads_to_file(reads.clone().into_iter(), &fq_path);
+
+        let read_structure = ReadStructure::from_str("8B+T").unwrap();
+        let metadata = "Sample_ID,Sample_Barcode\ns1,AAAAAAAA\ns2,ACGTACGT";
+        Io::default().write_lines(&metadata_path, vec![metadata]).unwrap();
+
+        create_dir(&output_path).unwrap();
+
+        let opts = Opts {
+            fastqs: vec![fq_path],
+            output_dir: output_path.clone(),
+            sample_metadata: metadata_path,
+            read_structures: vec![read_structure],
+            allowed_mismatches: 1,
+            min_delta: 2,
+            demux_threads: 2,
+            compressor_threads: 2,
+            writer_threads: 2,
+            filter_control_reads: false,
+            override_matcher: matcher,
+            ..Opts::default()
+        };
+
+        // Run the tool and then read back the data for s1
+        run(opts).unwrap();
+
+        let s1_recs = slurp_fastq(&output_path.join("s1_R1.fastq.gz"));
+        let s2_recs = slurp_fastq(&output_path.join("s2_R1.fastq.gz"));
+        let un_recs = slurp_fastq(&output_path.join("Undetermined_R1.fastq.gz"));
+
+        assert_eq!(s1_recs.len(), 2);
+        assert_eq!(s2_recs.len(), 0);
+        assert_eq!(un_recs.len(), 1);
     }
 }
