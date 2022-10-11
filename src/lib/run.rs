@@ -306,12 +306,13 @@ pub fn run(opts: Opts) -> Result<(), anyhow::Error> {
         "Sample metadata barcodes are unequal lengths."
     );
     ensure!(
-        (samples.len() == 1 && samples[0].barcode.len() == 0) ||
-        opts.read_structures
-            .iter()
-            .map(|s| s.sample_barcodes().map(|b| b.length().unwrap_or(0)).sum::<usize>())
-            .sum::<usize>()
-            == samples[0].barcode.len(),
+        (samples.len() == 1 && samples[0].barcode.len() == 0)
+            || opts
+                .read_structures
+                .iter()
+                .map(|s| s.sample_barcodes().map(|b| b.length().unwrap_or(0)).sum::<usize>())
+                .sum::<usize>()
+                == samples[0].barcode.len(),
         "The number of sample barcode bases in read structures does not match sample metadata"
     );
 

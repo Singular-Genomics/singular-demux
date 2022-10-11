@@ -270,12 +270,15 @@ pub fn from_path<P: AsRef<Path>>(
 
     if records.is_empty() {
         return Err(SampleMetadataError::ZeroSamples);
-    }
-    else if records.len() > 1 {
+    } else if records.len() > 1 {
         // Only validate barcodes if we have more than one sample, since we allow an empty
         // barcode on a single sample.
         for sample in records.iter() {
-            SampleMetadata::validate_barcode(sample.barcode.as_ref(), &sample.sample_id, Some(sample.ordinal + 2))?;
+            SampleMetadata::validate_barcode(
+                sample.barcode.as_ref(),
+                &sample.sample_id,
+                Some(sample.ordinal + 2),
+            )?;
         }
 
         if let Some(min_mismatch) = min_mismatch {
@@ -322,8 +325,8 @@ mod tests {
     use crate::matcher::UNDETERMINED_NAME;
 
     use super::*;
-    use std::fs;
     use itertools::Itertools;
+    use std::fs;
 
     #[test]
     fn test_all_valid_data() {
@@ -339,7 +342,10 @@ mod tests {
         to_path(&input_path, samples.iter()).unwrap();
 
         let found_samples = from_path(&input_path, None, UNDETERMINED_NAME)
-            .unwrap().into_iter().filter(|s| s.sample_id != UNDETERMINED_NAME).collect_vec();
+            .unwrap()
+            .into_iter()
+            .filter(|s| s.sample_id != UNDETERMINED_NAME)
+            .collect_vec();
 
         assert_eq!(found_samples.len(), 4, "Found wrong number of serialized samples.");
         for (found, expected) in found_samples.iter().zip(samples.iter()) {
@@ -453,7 +459,12 @@ Sample2,GGGG
         let expected = vec![
             SampleMetadata::new(String::from("Sample1"), BString::from("ACTG"), 0).unwrap(),
             SampleMetadata::new(String::from("Sample2"), BString::from("GGGG"), 1).unwrap(),
-            SampleMetadata::new_allow_invalid_bases(UNDETERMINED_NAME.to_string(), BString::from("NNNN"), 2).unwrap()
+            SampleMetadata::new_allow_invalid_bases(
+                UNDETERMINED_NAME.to_string(),
+                BString::from("NNNN"),
+                2,
+            )
+            .unwrap(),
         ];
 
         assert_eq!(from_path(&input_path, Some(1), UNDETERMINED_NAME).unwrap(), expected);
