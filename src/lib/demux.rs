@@ -291,8 +291,8 @@ where
         if self.read_filter_config.filter_control_reads
             || self.read_filter_config.filter_failing_quality
         {
-            if let Some(peek_read) = zipped_reads.get(0) {
-                let header = FastqHeader::try_from(peek_read.head())?;
+            for rec in zipped_reads.iter() {
+                let header = FastqHeader::try_from(rec.head())?;
                 if self.read_filter_config.filter_failing_quality
                     && header.is_failed_quality_filter()
                 {
