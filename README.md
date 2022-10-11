@@ -6,7 +6,34 @@ This repository is home to the `sgdemux` tool for demultiplexing sequencing data
 
 ## Installation
 
-See the separate [installation doc](docs/02_Installation.md) for instructions on how to install `sgdemux`.
+`sgdemux` may be installed from bioconda, downloaded from the releases page, or built from source.
+
+### From Bioconda
+
+Install from [`bioconda`](https://bioconda.github.io/) with:
+
+```console
+conda install -c bioconda sgdemux
+```
+
+### From Releases
+
+Install from pre-built binaries on the [Releases page](releases)
+
+### From Source
+
+1. Install [rust and cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html)
+2. Clone the repo and build the software:
+
+```console
+git clone https://github.com/Singular-Genomics/singular-demux.git
+cd singular-demux 
+cargo install
+```
+
+## Contributing
+
+Contributions are welcome.  See the [Contributing Guidelines](Contributing.md) for details.
 
 ## Overview
 
