@@ -282,6 +282,11 @@ pub fn run(opts: Opts) -> Result<(), anyhow::Error> {
         &opts.undetermined_sample_name,
     )?;
 
+    // If there is only a single sample in the metadata and that sample has no barcode
+    // specified the tool is being run to filter/mask/etc. _without_ demultiplexing
+    // and so all accepted records will go into file(s) for one sample with no Undetermined
+    let is_no_demux = samples.len() == 1 && samples[0].barcode.len() == 0;
+
     // Preflight checks
     ensure!(
         opts.output_dir.exists(),
@@ -306,7 +311,7 @@ pub fn run(opts: Opts) -> Result<(), anyhow::Error> {
         "Sample metadata barcodes are unequal lengths."
     );
     ensure!(
-        (samples.len() == 1 && samples[0].barcode.len() == 0)
+        is_no_demux
             || opts
                 .read_structures
                 .iter()
@@ -1433,6 +1438,7 @@ mod test {
         };
 
         // Run the tool and then read back the data for s1
+        let undetermined_id = opts.undetermined_sample_name.clone();
         run(opts).unwrap();
 
         let s1_recs = slurp_fastq(&output_path.join("s1_R1.fastq.gz"));
@@ -1441,5 +1447,9 @@ mod test {
             let expected = &reads[idx].seq[8..];
             assert_eq!(rec.seq.as_slice(), expected);
         }
+
+        // Check that there is no Undetermined file
+        let undetermined = output_path.join(format!("{}_R1.fastq.gz", undetermined_id));
+        assert!(!undetermined.exists(), "Undetermined file should not exist.");
     }
 }

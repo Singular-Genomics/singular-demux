@@ -267,7 +267,10 @@ pub fn from_path<P: AsRef<Path>>(
         record.ordinal = number;
         records.push(record);
     }
-    
+
+    // Support a special case where a single-sample samplesheet with no barcode sequence for the
+    // sample indicates a non-demultiplexing run.  When this is the case we will not validate
+    // sample barcodes or insert an Undetermined record into the metadata.
     let is_demultiplexing = records.len() > 1 || records[0].barcode.len() > 0;
 
     if records.is_empty() {
