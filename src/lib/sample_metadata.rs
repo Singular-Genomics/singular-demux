@@ -267,10 +267,12 @@ pub fn from_path<P: AsRef<Path>>(
         record.ordinal = number;
         records.push(record);
     }
+    
+    let is_demultiplexing = records.len() > 1 || records[0].barcode.len() > 0;
 
     if records.is_empty() {
         return Err(SampleMetadataError::ZeroSamples);
-    } else if records.len() > 1 {
+    } else if is_demultiplexing {
         // Only validate barcodes if we have more than one sample, since we allow an empty
         // barcode on a single sample.
         for sample in records.iter() {
@@ -288,7 +290,7 @@ pub fn from_path<P: AsRef<Path>>(
 
     // If we have more than one sample, or we have one sample with an actual barcode
     // then add in the undetermined sample.
-    if records.len() > 1 || records[0].barcode.len() > 0 {
+    if is_demultiplexing {
         records.push(SampleMetadata::new_allow_invalid_bases(
             String::from(undetermined_name),
             BString::from(vec![b'N'; records[0].barcode.len()]),
