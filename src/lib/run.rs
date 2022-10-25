@@ -123,8 +123,8 @@ pub struct Opts {
     /// Mask bases with quality score less than or equal to this value.
     ///
     /// If set to zero, no masking will be performed.
-    #[clap(long, short = 'M', default_value = "0", display_order = 11)]
-    pub quality_mask_threshold: u8,
+    #[clap(long, short = 'M', required = false, multiple = true, display_order = 11)]
+    pub quality_mask_threshold: Vec<u8>,
 
     /// Filter out control reads.
     #[clap(long, short = 'C', display_order = 11)]
@@ -216,10 +216,29 @@ pub struct Opts {
 impl Opts {
     /// Extract a [`DemuxReadFilterConfig`] from the CLI opts.
     pub fn as_read_filter_config(&self) -> DemuxReadFilterConfig {
+        // Make a vec of quality mask thresholds that is always the same length as the number
+        // of files being demultiplexed.
+        let num_reads = self.read_structures.len();
+        let num_values = self.quality_mask_threshold.len();
+
+        // This should be validated on construction so panic here if incorrect number of
+        // masking thresholds.
+        if num_values != 0 && num_values != 1 && num_values != num_reads {
+            panic!("Opts.quality_mask_thresholds must have 0, 1 or num_fastqs values.");
+        }
+
+        let thresholds: Vec<u8> = if num_values == num_reads {
+            self.quality_mask_threshold.clone()
+        } else if num_values == 1 {
+            vec![self.quality_mask_threshold[0]; num_reads]
+        } else {
+            vec![0; num_reads]
+        };
+
         DemuxReadFilterConfig::new(
             self.filter_control_reads,
             self.filter_failing_quality,
-            self.quality_mask_threshold,
+            thresholds,
             self.max_no_calls,
         )
     }
@@ -253,7 +272,7 @@ impl Default for Opts {
             most_unmatched_max_map_size: 5_000_000,
             most_unmatched_downsize_to: 5_000,
             max_no_calls: Some(1),
-            quality_mask_threshold: 0,
+            quality_mask_threshold: vec![0],
             output_types: String::from("T"),
             undetermined_sample_name: UNDETERMINED_NAME.to_string(),
             sample_metadata: PathBuf::default(),
@@ -599,7 +618,7 @@ mod test {
             demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
-            quality_mask_threshold: min_base_qual_for_masking,
+            quality_mask_threshold: vec![min_base_qual_for_masking],
             ..Opts::default()
         };
 
