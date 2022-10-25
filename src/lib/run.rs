@@ -279,9 +279,13 @@ pub fn run(opts: Opts) -> Result<(), anyhow::Error> {
     let samples = sample_metadata::from_path(
         opts.sample_metadata,
         Some(opts.allowed_mismatches),
-        true,
         &opts.undetermined_sample_name,
     )?;
+
+    // If there is only a single sample in the metadata and that sample has no barcode
+    // specified the tool is being run to filter/mask/etc. _without_ demultiplexing
+    // and so all accepted records will go into file(s) for one sample with no Undetermined
+    let is_no_demux = samples.len() == 1 && samples[0].barcode.len() == 0;
 
     // Preflight checks
     ensure!(
@@ -307,11 +311,13 @@ pub fn run(opts: Opts) -> Result<(), anyhow::Error> {
         "Sample metadata barcodes are unequal lengths."
     );
     ensure!(
-        opts.read_structures
-            .iter()
-            .map(|s| s.sample_barcodes().map(|b| b.length().unwrap_or(0)).sum::<usize>())
-            .sum::<usize>()
-            == samples[0].barcode.len(),
+        is_no_demux
+            || opts
+                .read_structures
+                .iter()
+                .map(|s| s.sample_barcodes().map(|b| b.length().unwrap_or(0)).sum::<usize>())
+                .sum::<usize>()
+                == samples[0].barcode.len(),
         "The number of sample barcode bases in read structures does not match sample metadata"
     );
 
@@ -773,7 +779,6 @@ mod test {
         let samples = sample_metadata::from_path(
             &opts.sample_metadata,
             Some(opts.allowed_mismatches),
-            true,
             &opts.undetermined_sample_name,
         )
         .unwrap();
@@ -958,7 +963,6 @@ mod test {
         let samples = sample_metadata::from_path(
             &opts.sample_metadata,
             Some(opts.allowed_mismatches),
-            true,
             &opts.undetermined_sample_name,
         )
         .unwrap();
@@ -1143,7 +1147,6 @@ mod test {
         let samples = sample_metadata::from_path(
             &opts.sample_metadata,
             Some(opts.allowed_mismatches),
-            true,
             &opts.undetermined_sample_name,
         )
         .unwrap();
@@ -1275,7 +1278,6 @@ mod test {
         let samples = sample_metadata::from_path(
             &opts.sample_metadata,
             Some(opts.allowed_mismatches),
-            true,
             &opts.undetermined_sample_name,
         )
         .unwrap();
@@ -1401,5 +1403,53 @@ mod test {
         assert_eq!(s1_recs.len(), 2);
         assert_eq!(s2_recs.len(), 0);
         assert_eq!(un_recs.len(), 1);
+    }
+
+    #[rstest]
+    fn test_single_sample_no_demux() {
+        let dir = tempfile::tempdir().unwrap();
+        let fq_path = dir.path().join("fq1.fastq.gz");
+        let metadata_path = dir.path().join("metadata.csv");
+        let output_path = dir.path().join("output");
+
+        let reads = vec![
+            Fq { name: "q1", bases: b"AAAAAAAACGACTCGTCATGA", ..Fq::default() }.to_owned_record(),
+            Fq { name: "q2", bases: b"NNNNNNNNATATCGCGTCTAT", ..Fq::default() }.to_owned_record(),
+            Fq { name: "q3", bases: b"ACAAATAACCGTATCGGCTTA", ..Fq::default() }.to_owned_record(),
+        ];
+        write_reads_to_file(reads.clone().into_iter(), &fq_path);
+
+        let read_structure = ReadStructure::from_str("8B+T").unwrap();
+        let metadata = "Sample_ID,Sample_Barcode\ns1,";
+        Io::default().write_lines(&metadata_path, vec![metadata]).unwrap();
+
+        create_dir(&output_path).unwrap();
+
+        let opts = Opts {
+            fastqs: vec![fq_path],
+            output_dir: output_path.clone(),
+            sample_metadata: metadata_path,
+            read_structures: vec![read_structure],
+            demux_threads: 2,
+            compressor_threads: 2,
+            writer_threads: 2,
+            filter_control_reads: false,
+            ..Opts::default()
+        };
+
+        // Run the tool and then read back the data for s1
+        let undetermined_id = opts.undetermined_sample_name.clone();
+        run(opts).unwrap();
+
+        let s1_recs = slurp_fastq(&output_path.join("s1_R1.fastq.gz"));
+        assert_eq!(s1_recs.len(), 3);
+        for (idx, rec) in s1_recs.iter().enumerate() {
+            let expected = &reads[idx].seq[8..];
+            assert_eq!(rec.seq.as_slice(), expected);
+        }
+
+        // Check that there is no Undetermined file
+        let undetermined = output_path.join(format!("{}_R1.fastq.gz", undetermined_id));
+        assert!(!undetermined.exists(), "Undetermined file should not exist.");
     }
 }

@@ -241,3 +241,21 @@ This file is only output for dual-indexed runs.  It contains frequently observed
 |------|-----------|
 |`barcode`|The observed barcode sequence.|
 |`count`|The approximate number of times that barcode sequences was observed.|
+
+
+## Advance Usage
+
+### Single Sample
+
+It is possible to run `sgdemux` on a single sample _without_ demultiplexing, in order to make use of the remaining functionality such as filtering control reads, extracting UMIs, etc.  This mode is enabled by providing a sample metadata file that contains a single sample, with no barcode sequence.  For example:
+
+```text
+Sample_ID,Sample_Barcode
+lone_sample,
+```
+
+The `Sample_Barcode` column must still be present, but empty for the sample.  When running in this mode:
+
+* All reads are assigned to the single sample
+* No `Undetermined` files are created
+* Sample barcodes, if read, will be inserted into the headers of the output FASTQ reads
