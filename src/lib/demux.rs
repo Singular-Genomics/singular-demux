@@ -97,7 +97,7 @@ pub struct DemuxReadFilterConfig {
     pub filter_control_reads: bool,
     /// If true, filter out reads that have the failing quality filter field set in the FASTQ heder
     pub filter_failing_quality: bool,
-    /// The quality thresholds at which to mask bases to N. The vec must contain one entry per
+    /// The quality thresholds at which to mask template bases to N. Sample barcode/index and UMI bases are never masked. The vec must contain one entry per
     /// input FASTQ file being masked.  If a base quality in a read is less than the corresponding
     /// value for the FASTQ then the base will be masked. A `quality_mask_threshold` of 0 indicates
     /// that no masking checks shall occur.
