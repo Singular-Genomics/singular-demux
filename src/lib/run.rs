@@ -120,11 +120,12 @@ pub struct Opts {
     #[clap(long, short = 'N', display_order = 11)]
     pub max_no_calls: Option<usize>,
 
-    /// Mask bases with quality score less than or equal to this value.
+    /// Mask template bases with quality score less than or equal to this value.  Sample
+    /// barcode/index and UMI bases are never masked.
     ///
-    /// If set to zero, no masking will be performed.
-    #[clap(long, short = 'M', default_value = "0", display_order = 11)]
-    pub quality_mask_threshold: u8,
+    /// If provided either a single value, or one value per FASTQ must be provided.
+    #[clap(long, short = 'M', required = false, multiple = true, display_order = 11)]
+    pub quality_mask_threshold: Vec<u8>,
 
     /// Filter out control reads.
     #[clap(long, short = 'C', display_order = 11)]
@@ -216,10 +217,29 @@ pub struct Opts {
 impl Opts {
     /// Extract a [`DemuxReadFilterConfig`] from the CLI opts.
     pub fn as_read_filter_config(&self) -> DemuxReadFilterConfig {
+        // Make a vec of quality mask thresholds that is always the same length as the number
+        // of files being demultiplexed.
+        let num_reads = self.read_structures.len();
+        let num_values = self.quality_mask_threshold.len();
+
+        // This should be validated on construction so panic here if incorrect number of
+        // masking thresholds.
+        if num_values != 0 && num_values != 1 && num_values != num_reads {
+            panic!("Opts.quality_mask_thresholds must have 0, 1 or num_fastqs values.");
+        }
+
+        let thresholds: Vec<u8> = if num_values == num_reads {
+            self.quality_mask_threshold.clone()
+        } else if num_values == 1 {
+            vec![self.quality_mask_threshold[0]; num_reads]
+        } else {
+            vec![0; num_reads]
+        };
+
         DemuxReadFilterConfig::new(
             self.filter_control_reads,
             self.filter_failing_quality,
-            self.quality_mask_threshold,
+            thresholds,
             self.max_no_calls,
         )
     }
@@ -253,7 +273,7 @@ impl Default for Opts {
             most_unmatched_max_map_size: 5_000_000,
             most_unmatched_downsize_to: 5_000,
             max_no_calls: Some(1),
-            quality_mask_threshold: 0,
+            quality_mask_threshold: vec![0],
             output_types: String::from("T"),
             undetermined_sample_name: UNDETERMINED_NAME.to_string(),
             sample_metadata: PathBuf::default(),
@@ -305,6 +325,12 @@ pub fn run(opts: Opts) -> Result<(), anyhow::Error> {
     ensure!(
         opts.fastqs.len() == opts.read_structures.len(),
         "Same number of read structures should be given as FASTQs"
+    );
+    ensure!(
+        opts.quality_mask_threshold.is_empty()
+            || opts.quality_mask_threshold.len() == 1
+            || opts.quality_mask_threshold.len() == opts.read_structures.len(),
+        "Either a single quality mask threshold, or one per fastq must be provided."
     );
     ensure!(
         samples.iter().all(|s| s.barcode.len() == samples[0].barcode.len()),
@@ -539,6 +565,7 @@ mod test {
     };
 
     use fgoxide::io::{DelimFile, Io};
+    use itertools::Itertools;
     use read_structure::ReadStructure;
     use rstest::rstest;
     use seq_io::{fastq::OwnedRecord, BaseRecord};
@@ -599,7 +626,7 @@ mod test {
             demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
-            quality_mask_threshold: min_base_qual_for_masking,
+            quality_mask_threshold: vec![min_base_qual_for_masking],
             ..Opts::default()
         };
 
@@ -1451,5 +1478,87 @@ mod test {
         // Check that there is no Undetermined file
         let undetermined = output_path.join(format!("{}_R1.fastq.gz", undetermined_id));
         assert!(!undetermined.exists(), "Undetermined file should not exist.");
+    }
+
+    #[rstest]
+    #[allow(clippy::too_many_lines)]
+    fn test_demux_multiple_q_masks() {
+        let dir = tempfile::tempdir().unwrap();
+        let fastqs = vec!["r1", "r2", "i1"]
+            .into_iter()
+            .map(|name| dir.path().join(format!("{}.fastq.gz", name)))
+            .collect_vec();
+
+        let read_structures = vec![
+            ReadStructure::from_str("6M+T").unwrap(), // 6bp UMI then template
+            ReadStructure::from_str("+T").unwrap(),   // just template
+            ReadStructure::from_str("8B").unwrap(),   // just an 8bp index
+        ];
+
+        // Note we're going to filter R1 <= Q20, R2 <= Q10 and I1 <= @15 _but_ only mask template
+        // segments.  Quals used in qual strings:
+        //   - q30 = ?
+        //   - q21 = 6
+        //   - q20 = 5
+        //   - q16 = 1
+        //   - q15 = 0
+        //   - q11 = ,
+        //   - q10 = +
+        let r1 = Fq {
+            name: "q1",
+            bases: b"ACGTAATTTTAAAA", // u1=ACGTAA, r1=TTTNAANN
+            quals: Some(b"+,0156??65?610"),
+            ..Fq::default()
+        };
+        let r2 = Fq { name: "q2", bases: b"GTAGCTAC", quals: Some(b",,++0156"), ..Fq::default() };
+        let i1 = Fq { name: "q1", bases: b"GGTCAGAT", quals: Some(b"5555****"), ..Fq::default() };
+
+        for (fastq, read) in fastqs.iter().zip(vec![r1, r2, i1].iter()) {
+            write_reads_to_file(std::iter::once(read.to_owned_record()), fastq);
+        }
+
+        let output = dir.path().join("output");
+        create_dir(&output).unwrap();
+
+        let metadata = dir.path().join("samples.csv");
+        let metadata_txt = "Sample_ID,Sample_Barcode\ns1,GGTCAGAT\n";
+        std::fs::write(&metadata, metadata_txt).expect("Failed to write sample metadata.");
+
+        let opts = Opts {
+            fastqs,
+            output_dir: output.clone(),
+            sample_metadata: metadata,
+            read_structures,
+            output_types: "TBM".to_owned(),
+            allowed_mismatches: 0,
+            min_delta: 1,
+            demux_threads: 1,
+            compressor_threads: 1,
+            writer_threads: 1,
+            filter_control_reads: false,
+            quality_mask_threshold: vec![20, 10, 15],
+            ..Opts::default()
+        };
+
+        run(opts).unwrap();
+
+        // Check the undetermined sample got no reads
+        let un_recs = slurp_fastq(&output.join("Undetermined_R1.fastq.gz"));
+        assert!(un_recs.is_empty());
+
+        // Check that our reads got masked appropriately
+        let r1s = slurp_fastq(&output.join("s1_R1.fastq.gz"));
+        let r2s = slurp_fastq(&output.join("s1_R2.fastq.gz"));
+        let i1s = slurp_fastq(&output.join("s1_I1.fastq.gz"));
+        let u1s = slurp_fastq(&output.join("s1_U1.fastq.gz"));
+
+        for recs in vec![&r1s, &r2s, &i1s, &u1s].into_iter() {
+            assert_eq!(recs.len(), 1);
+        }
+
+        assert_eq!(std::str::from_utf8(&r1s[0].seq).unwrap(), "TTTNAANN");
+        assert_eq!(std::str::from_utf8(&r2s[0].seq).unwrap(), "GTNNCTAC");
+        assert_eq!(std::str::from_utf8(&i1s[0].seq).unwrap(), "GGTCAGAT"); // no masking
+        assert_eq!(std::str::from_utf8(&u1s[0].seq).unwrap(), "ACGTAA"); // no masking
     }
 }

@@ -97,10 +97,11 @@ pub struct DemuxReadFilterConfig {
     pub filter_control_reads: bool,
     /// If true, filter out reads that have the failing quality filter field set in the FASTQ heder
     pub filter_failing_quality: bool,
-    /// The quality threshold at which to mask bases to N. If a quality is less than this value the
-    /// corresponding base will be masked. A `quality_mask_threshold` of 0 indicates that no masking checks
-    /// shall occur.
-    pub quality_mask_threshold: u8,
+    /// The quality thresholds at which to mask template bases to N. Sample barcode/index and UMI bases are never masked. The vec must contain one entry per
+    /// input FASTQ file being masked.  If a base quality in a read is less than the corresponding
+    /// value for the FASTQ then the base will be masked. A `quality_mask_threshold` of 0 indicates
+    /// that no masking checks shall occur.
+    pub quality_mask_thresholds: Vec<u8>,
     /// Max no-calls (N's) in a barcode before it is considered unmatchable.
     ///
     /// A barcode with total N's greater than `max_no_call` will be considered unmatchable.
@@ -112,10 +113,10 @@ impl DemuxReadFilterConfig {
     pub fn new(
         filter_control_reads: bool,
         filter_failing_quality: bool,
-        quality_mask_threshold: u8,
+        quality_mask_thresholds: Vec<u8>,
         max_no_calls: Option<usize>,
     ) -> Self {
-        Self { filter_control_reads, filter_failing_quality, quality_mask_threshold, max_no_calls }
+        Self { filter_control_reads, filter_failing_quality, quality_mask_thresholds, max_no_calls }
     }
 }
 
@@ -125,7 +126,7 @@ impl Default for DemuxReadFilterConfig {
         Self {
             filter_control_reads: false,
             filter_failing_quality: false,
-            quality_mask_threshold: 0,
+            quality_mask_thresholds: vec![],
             max_no_calls: None,
         }
     }
@@ -332,6 +333,7 @@ where
         kind: SegmentType,
         read: &RefRecord,
         segments: &[ReadSegment],
+        quality_mask_threshold: u8,
         sample_barcode: &mut ExtractedBarcode,
         umi_barcode: &mut ExtractedBarcode,
     ) -> Result<(Option<OwnedRecord>, BaseQualCounter)> {
@@ -354,17 +356,15 @@ where
                         segment, String::from_utf8_lossy(read.head())
                     )
                 })?;
+
             // Mask low quality bases
-            let sub_read_bases = if self.read_filter_config.quality_mask_threshold > 0 {
+            let do_masking = quality_mask_threshold > 0 && kind == SegmentType::Template;
+            let sub_read_bases = if do_masking {
                 let mut new_bases = Vec::with_capacity(bases.len());
                 for (base, qual) in
                     bases.iter().zip(qual_counter.update_with_iter(quals.iter(), &kind))
                 {
-                    new_bases.push(if qual - 33 > self.read_filter_config.quality_mask_threshold {
-                        *base
-                    } else {
-                        b'N'
-                    });
+                    new_bases.push(if qual - 33 > quality_mask_threshold { *base } else { b'N' });
                 }
                 Cow::from(new_bases)
             } else {
@@ -434,12 +434,15 @@ where
             }
 
             // Extract the barcodes from the read structure and build up the record to be output
-            for (read, structure) in zipped_reads.iter().zip(self.grouped_read_segments.iter()) {
+            for (idx, (read, structure)) in
+                zipped_reads.iter().zip(self.grouped_read_segments.iter()).enumerate()
+            {
                 for (kind, segments) in &structure.segments_by_kind {
                     let (read, counter) = self.process_segments(
                         *kind,
                         read,
                         segments,
+                        self.read_filter_config.quality_mask_thresholds[idx],
                         &mut sample_barcode,
                         &mut umi_barcode,
                     )?;
@@ -599,7 +602,6 @@ impl<'a> DemuxedGroup<'a> {
 #[cfg(test)]
 #[allow(clippy::all)]
 mod test {
-
     use bstr::BString;
     use read_structure::{ReadStructure, SegmentType};
     use rstest::rstest;
@@ -652,7 +654,7 @@ mod test {
                 max_no_calls,
                 filter_failing_quality,
                 filter_control_reads,
-                quality_mask_threshold,
+                quality_mask_threshold: vec![quality_mask_threshold],
                 ..Opts::default()
             };
 
@@ -1604,7 +1606,10 @@ mod test {
         let r2_record_set = reads_to_record_set(r2_reads.iter().cloned().flatten());
         let i1_record_set = reads_to_record_set(i1_reads.iter().cloned().flatten());
 
-        let filter_config = DemuxReadFilterConfig::default();
+        let filter_config = DemuxReadFilterConfig {
+            quality_mask_thresholds: vec![0, 0, 0],
+            ..DemuxReadFilterConfig::default()
+        };
 
         let matcher = PreComputeMatcher::new(&metadata, 1, 0, 2);
         let demuxer = Demultiplexer::new(
