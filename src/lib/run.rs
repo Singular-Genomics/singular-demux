@@ -120,7 +120,8 @@ pub struct Opts {
     #[clap(long, short = 'N', display_order = 11)]
     pub max_no_calls: Option<usize>,
 
-    /// Mask template bases with quality score less than or equal to this value.  Sample barcode/index and UMI bases are never masked.
+    /// Mask template bases with quality score less than or equal to this value.  Sample
+    /// barcode/index and UMI bases are never masked.
     ///
     /// If provided either a single value, or one value per FASTQ must be provided.
     #[clap(long, short = 'M', required = false, multiple = true, display_order = 11)]
