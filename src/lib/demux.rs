@@ -97,10 +97,11 @@ pub struct DemuxReadFilterConfig {
     pub filter_control_reads: bool,
     /// If true, filter out reads that have the failing quality filter field set in the FASTQ heder
     pub filter_failing_quality: bool,
-    /// The quality thresholds at which to mask template bases to N. Sample barcode/index and UMI bases are never masked. The vec must contain one entry per
-    /// input FASTQ file being masked.  If a base quality in a read is less than the corresponding
-    /// value for the FASTQ then the base will be masked. A `quality_mask_threshold` of 0 indicates
-    /// that no masking checks shall occur.
+    /// The quality thresholds at which to mask template bases to N. Sample barcode/index
+    /// and UMI bases are never masked. The vec must contain one entry per input FASTQ file being
+    /// masked.  If a base quality in a read is less than the corresponding threshold value for the
+    /// FASTQ then the base will be masked. A `quality_mask_threshold` of 0 indicates that no
+    /// masking checks shall occur.
     pub quality_mask_thresholds: Vec<u8>,
     /// Max no-calls (N's) in a barcode before it is considered unmatchable.
     ///
@@ -349,11 +350,11 @@ where
 
         for segment in segments {
             let (bases, quals) =
-                // TODO: use Display formatting instead of debug
                 segment.extract_bases_and_quals(read.seq(), read.qual()).with_context(|| {
                     format!(
                         "Failed to extract bases and quality scores for {:?} from {:?}",
-                        segment, String::from_utf8_lossy(read.head())
+                        segment,
+                        String::from_utf8_lossy(read.head())
                     )
                 })?;
 
@@ -364,7 +365,7 @@ where
                 for (base, qual) in
                     bases.iter().zip(qual_counter.update_with_iter(quals.iter(), &kind))
                 {
-                    new_bases.push(if qual - 33 > quality_mask_threshold { *base } else { b'N' });
+                    new_bases.push(if qual - 33 < quality_mask_threshold { b'N' } else { *base });
                 }
                 Cow::from(new_bases)
             } else {

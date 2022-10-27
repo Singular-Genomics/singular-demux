@@ -120,10 +120,10 @@ pub struct Opts {
     #[clap(long, short = 'N', display_order = 11)]
     pub max_no_calls: Option<usize>,
 
-    /// Mask template bases with quality score less than or equal to this value.  Sample
-    /// barcode/index and UMI bases are never masked.
+    /// Mask template bases with quality scores less than specified value(s).
     ///
-    /// If provided either a single value, or one value per FASTQ must be provided.
+    /// Sample /// barcode/index and UMI bases are never masked. If provided either a single value,
+    /// or one value per FASTQ must be provided.
     #[clap(long, short = 'M', required = false, multiple = true, display_order = 11)]
     pub quality_mask_threshold: Vec<u8>,
 
@@ -605,7 +605,7 @@ mod test {
     }
 
     fn test_end_to_end_with_quality_threshold(
-        min_base_qual_for_masking: u8,
+        masking_threshold_qual: u8,
         threads: usize,
     ) -> Vec<OwnedRecord> {
         let dir = tempfile::tempdir().unwrap();
@@ -626,7 +626,7 @@ mod test {
             demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
-            quality_mask_threshold: vec![min_base_qual_for_masking],
+            quality_mask_threshold: vec![masking_threshold_qual],
             ..Opts::default()
         };
 
@@ -638,10 +638,10 @@ mod test {
 
     #[rstest]
     #[case(0, 1, & [b'A'; 39])]
-    #[case(10, 1, & [[b'N'; 9].as_slice(), & [b'A'; 30]].concat())]
+    #[case(11, 1, & [[b'N'; 9].as_slice(), & [b'A'; 30]].concat())]
     #[case(0, 2, & [b'A'; 39])]
-    #[case(10, 2, & [[b'N'; 9].as_slice(), & [b'A'; 30]].concat())]
-    #[case(39, 2, & [[b'N'; 38].as_slice(), & [b'A'; 1]].concat())]
+    #[case(11, 2, & [[b'N'; 9].as_slice(), & [b'A'; 30]].concat())]
+    #[case(40, 2, & [[b'N'; 38].as_slice(), & [b'A'; 1]].concat())]
     #[case(100, 2, & [b'N'; 39])]
     fn test_run_end_to_end_with_quality_threshold(
         #[case] quality: u8,
@@ -1497,21 +1497,21 @@ mod test {
 
         // Note we're going to filter R1 <= Q20, R2 <= Q10 and I1 <= @15 _but_ only mask template
         // segments.  Quals used in qual strings:
-        //   - q30 = ?
-        //   - q21 = 6
-        //   - q20 = 5
-        //   - q16 = 1
-        //   - q15 = 0
-        //   - q11 = ,
-        //   - q10 = +
+        //   - q30 = ?  => q30 = ?
+        //   - q21 = 6  => q20 = 5
+        //   - q20 = 5  => q19 = 4
+        //   - q16 = 1  => q15 = 0
+        //   - q15 = 0  => q14 = /
+        //   - q11 = ,  => q10 = +
+        //   - q10 = +  => q9  = *
         let r1 = Fq {
             name: "q1",
             bases: b"ACGTAATTTTAAAA", // u1=ACGTAA, r1=TTTNAANN
-            quals: Some(b"+,0156??65?610"),
+            quals: Some(b"*+/045??54?50/"),
             ..Fq::default()
         };
-        let r2 = Fq { name: "q2", bases: b"GTAGCTAC", quals: Some(b",,++0156"), ..Fq::default() };
-        let i1 = Fq { name: "q1", bases: b"GGTCAGAT", quals: Some(b"5555****"), ..Fq::default() };
+        let r2 = Fq { name: "q2", bases: b"GTAGCTAC", quals: Some(b"++**/045"), ..Fq::default() };
+        let i1 = Fq { name: "q1", bases: b"GGTCAGAT", quals: Some(b"4444****"), ..Fq::default() };
 
         for (fastq, read) in fastqs.iter().zip(vec![r1, r2, i1].iter()) {
             write_reads_to_file(std::iter::once(read.to_owned_record()), fastq);
