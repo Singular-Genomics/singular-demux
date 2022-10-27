@@ -19,7 +19,7 @@ cargo install cargo-release
 
 ```console
 cargo release [major,minor,patch,release,rc...] --no-publish
-``
+```
 
 Note: "dry-run" is the default for cargo release.
 
