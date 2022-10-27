@@ -43,7 +43,7 @@ Upon success, move the version to the [next candidate release](#release-candidat
 To move to the next release candidate:
 
 ```console
-cargo release rc --no-tag  --no-publish --execute
+cargo release rc --no-tag --no-publish --execute
 ```
 
 This will create or bump the pre-release version, create a new tag and push it to github, and kick off the release GitHub action that will publish to the release page.
