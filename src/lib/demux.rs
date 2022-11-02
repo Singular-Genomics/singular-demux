@@ -615,7 +615,7 @@ mod test {
         matcher::{
             CachedHammingDistanceMatcher, MatcherKind, PreComputeMatcher, UNDETERMINED_NAME,
         },
-        run::Opts,
+        opts::Opts,
         sample_metadata::SampleMetadata,
         utils::test_commons::{
             create_preset_sample_metadata, reads_to_record_set, Fq, SAMPLE_BARCODE_1,
