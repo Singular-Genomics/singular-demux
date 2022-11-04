@@ -14,24 +14,22 @@ use crate::{
     metrics::{DemuxedGroupMetrics, UnmatchedCounterThread},
     opts::{Opts, LOGO},
     pooled_sample_writer::PooledSampleWriter,
-    sample_metadata::{self},
+    sample_sheet::{self},
     thread_reader::ThreadReader,
     utils::{check_bgzf, filenames, MultiZip},
 };
 
 /// Run demultiplexing.
 #[allow(clippy::too_many_lines)]
-pub fn run(opts: Opts) -> Result<(), anyhow::Error> {
+pub fn run(opts: &Opts) -> Result<(), anyhow::Error> {
     eprint!("{}", LOGO);
 
     let read_filter_config = opts.as_read_filter_config();
 
     let output_types_to_write = opts.output_types_to_write()?;
-    let samples = sample_metadata::from_path(
-        opts.sample_metadata,
-        Some(opts.allowed_mismatches),
-        &opts.undetermined_sample_name,
-    )?;
+    let sample_sheet = sample_sheet::SampleSheet::from_path(&opts.sample_metadata, &opts)?;
+    let samples = sample_sheet.samples;
+    let opts = sample_sheet.opts;
 
     // If there is only a single sample in the metadata and that sample has no barcode
     // specified the tool is being run to filter/mask/etc. _without_ demultiplexing
@@ -295,7 +293,8 @@ mod test {
         fastq_header::FastqHeader,
         matcher::{MatcherKind, UNDETERMINED_NAME},
         metrics::{BarcodeCount, RunMetrics, SampleMetricsProcessed},
-        sample_metadata::{self, SampleMetadata},
+        sample_metadata::SampleMetadata,
+        sample_sheet::SampleSheet,
         utils::{
             segment_kind_to_fastq_id,
             test_commons::{
@@ -351,7 +350,7 @@ mod test {
             ..Opts::default()
         };
 
-        run(opts).unwrap();
+        run(&opts).unwrap();
 
         let fastq = output.join(format!("{}_R1.fastq.gz", "Sample1"));
         slurp_fastq(&fastq)
@@ -407,7 +406,7 @@ mod test {
             min_delta: 3,
             ..Opts::default()
         };
-        run(opts).unwrap();
+        run(&opts).unwrap();
     }
 
     #[rstest]
@@ -437,7 +436,7 @@ mod test {
             min_delta: 3,
             ..Opts::default()
         };
-        run(opts).unwrap();
+        run(&opts).unwrap();
     }
 
     fn fastq_path(dir: impl AsRef<Path>) -> PathBuf {
@@ -524,19 +523,13 @@ mod test {
             ..Opts::default()
         };
 
-        let samples = sample_metadata::from_path(
-            &opts.sample_metadata,
-            Some(opts.allowed_mismatches),
-            &opts.undetermined_sample_name,
-        )
-        .unwrap();
-
+        let sample_sheet = SampleSheet::from_path(&opts.sample_metadata, &opts).unwrap();
         let output_types_to_write = opts.output_types_to_write().unwrap();
 
-        run(opts).unwrap();
+        run(&opts).unwrap();
 
         // Check outputs
-        for name in samples.iter().map(|s| &s.sample_id) {
+        for name in sample_sheet.samples.iter().map(|s| &s.sample_id) {
             for output_type_to_write in &output_types_to_write {
                 let fastq_id = segment_kind_to_fastq_id(output_type_to_write);
                 let fastq = output.join(format!("{}_{}1.fastq.gz", name, fastq_id));
@@ -573,16 +566,16 @@ mod test {
             delim.read_tsv(&per_sample_metrics).unwrap();
         assert_eq!(per_sample_metrics.len(), 5);
 
-        for (metric, sample) in per_sample_metrics.into_iter().zip(samples.iter()) {
+        for (metric, sample) in per_sample_metrics.into_iter().zip(sample_sheet.samples.iter()) {
             assert_eq!(metric.barcode_name, *sample.sample_id);
             assert_eq!(metric.barcode, *sample.barcode.to_string());
             assert_eq!(metric.library_name, *sample.sample_id);
 
-            if metric.barcode_name == samples[0].sample_id {
+            if metric.barcode_name == sample_sheet.samples[0].sample_id {
                 assert_eq!(metric.templates, 2);
                 assert_eq!(metric.perfect_matches, 1);
                 assert_eq!(metric.one_mismatch_matches, 1);
-            } else if metric.barcode_name == samples[4].sample_id {
+            } else if metric.barcode_name == sample_sheet.samples[4].sample_id {
                 assert_eq!(metric.templates, 3);
                 assert_eq!(metric.perfect_matches, 0);
                 assert_eq!(metric.one_mismatch_matches, 0);
@@ -708,16 +701,11 @@ mod test {
             ..Opts::default()
         };
 
-        let samples = sample_metadata::from_path(
-            &opts.sample_metadata,
-            Some(opts.allowed_mismatches),
-            &opts.undetermined_sample_name,
-        )
-        .unwrap();
+        let sample_sheet = SampleSheet::from_path(&opts.sample_metadata, &opts).unwrap();
 
-        run(opts).unwrap();
+        run(&opts).unwrap();
 
-        for (i, sample) in samples.iter().enumerate() {
+        for (i, sample) in sample_sheet.samples.iter().enumerate() {
             let barcodes: Vec<_> = barcodes_per_sample[i].iter().cloned().collect();
             let assignment: Vec<_> =
                 assignments_per_sample[i].iter().map(|s| (*s).as_bytes()).collect();
@@ -777,7 +765,7 @@ mod test {
             ..Opts::default()
         };
 
-        run(opts).unwrap();
+        run(&opts).unwrap();
 
         let record = &slurp_fastq(output.join("foo_R1.fastq.gz"))[0];
         let header = FastqHeader::try_from(record.head()).unwrap();
@@ -830,7 +818,7 @@ mod test {
             ..Opts::default()
         };
 
-        run(opts).unwrap();
+        run(&opts).unwrap();
     }
 
     #[rstest]
@@ -892,15 +880,10 @@ mod test {
             ..Opts::default()
         };
 
-        let samples = sample_metadata::from_path(
-            &opts.sample_metadata,
-            Some(opts.allowed_mismatches),
-            &opts.undetermined_sample_name,
-        )
-        .unwrap();
-        run(opts).unwrap();
+        let sample_sheet = SampleSheet::from_path(&opts.sample_metadata, &opts).unwrap();
+        run(&opts).unwrap();
 
-        for (i, sample) in samples.iter().enumerate() {
+        for (i, sample) in sample_sheet.samples.iter().enumerate() {
             let sample_id = sample.sample_id.clone();
             let r1_fastq = output.join(format!("{}_R1.fastq.gz", &sample_id));
             let r2_fastq = output.join(format!("{}_R2.fastq.gz", &sample_id));
@@ -940,16 +923,16 @@ mod test {
         let per_sample_metrics: Vec<SampleMetricsProcessed> =
             delim.read_tsv(&per_sample_metrics).unwrap();
         assert_eq!(per_sample_metrics.len(), 5);
-        for (metric, sample) in per_sample_metrics.into_iter().zip(samples.iter()) {
+        for (metric, sample) in per_sample_metrics.into_iter().zip(sample_sheet.samples.iter()) {
             assert_eq!(metric.barcode_name, *sample.sample_id);
             assert_eq!(metric.barcode, *sample.barcode.to_string());
             assert_eq!(metric.library_name, *sample.sample_id);
 
-            if metric.barcode_name == samples[0].sample_id {
+            if metric.barcode_name == sample_sheet.samples[0].sample_id {
                 assert_eq!(metric.templates, 1);
                 assert_eq!(metric.perfect_matches, 1);
                 assert_eq!(metric.one_mismatch_matches, 0);
-            } else if metric.barcode_name == samples[4].sample_id {
+            } else if metric.barcode_name == sample_sheet.samples[4].sample_id {
                 assert_eq!(metric.templates, 0);
                 assert_eq!(metric.perfect_matches, 0);
                 assert_eq!(metric.one_mismatch_matches, 0);
@@ -1023,14 +1006,9 @@ mod test {
             ..Opts::default()
         };
 
-        let samples = sample_metadata::from_path(
-            &opts.sample_metadata,
-            Some(opts.allowed_mismatches),
-            &opts.undetermined_sample_name,
-        )
-        .unwrap();
+        let sample_sheet = SampleSheet::from_path(&opts.sample_metadata, &opts).unwrap();
 
-        run(opts).unwrap();
+        run(&opts).unwrap();
 
         // Setup expected
         // Note, if a read is both control and failed quality, it is counted as failed quality
@@ -1063,12 +1041,12 @@ mod test {
             delim.read_tsv(&per_sample_metrics).unwrap();
         assert_eq!(per_sample_metrics.len(), 5);
 
-        for (metric, sample) in per_sample_metrics.into_iter().zip(samples.iter()) {
+        for (metric, sample) in per_sample_metrics.into_iter().zip(sample_sheet.samples.iter()) {
             assert_eq!(metric.barcode_name, *sample.sample_id);
             assert_eq!(metric.barcode, *sample.barcode.to_string());
             assert_eq!(metric.library_name, *sample.sample_id);
 
-            if metric.barcode_name == samples[0].sample_id {
+            if metric.barcode_name == sample_sheet.samples[0].sample_id {
                 assert_eq!(metric.templates, templates);
                 assert_eq!(metric.perfect_matches, templates);
                 assert_eq!(metric.one_mismatch_matches, 0);
@@ -1142,7 +1120,7 @@ mod test {
         };
 
         // Run the tool and then read back the data for s1
-        run(opts).unwrap();
+        run(&opts).unwrap();
 
         let s1_recs = slurp_fastq(&output_path.join("s1_R1.fastq.gz"));
         let s2_recs = slurp_fastq(&output_path.join("s2_R1.fastq.gz"));
@@ -1187,7 +1165,7 @@ mod test {
 
         // Run the tool and then read back the data for s1
         let undetermined_id = opts.undetermined_sample_name.clone();
-        run(opts).unwrap();
+        run(&opts).unwrap();
 
         let s1_recs = slurp_fastq(&output_path.join("s1_R1.fastq.gz"));
         assert_eq!(s1_recs.len(), 3);
@@ -1261,7 +1239,7 @@ mod test {
             ..Opts::default()
         };
 
-        run(opts).unwrap();
+        run(&opts).unwrap();
 
         // Check the undetermined sample got no reads
         let un_recs = slurp_fastq(&output.join("Undetermined_R1.fastq.gz"));

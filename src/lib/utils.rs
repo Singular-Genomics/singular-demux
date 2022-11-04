@@ -191,7 +191,7 @@ pub mod test_commons {
         path::{Path, PathBuf},
     };
 
-    use crate::{matcher::UNDETERMINED_NAME, sample_metadata};
+    use crate::{opts::Opts, sample_metadata, sample_sheet::SampleSheet};
     use bgzf::CompressionLevel;
     use sample_metadata::SampleMetadata;
     use seq_io::{
@@ -228,7 +228,8 @@ pub mod test_commons {
     pub fn create_preset_sample_metadata() -> Vec<SampleMetadata> {
         let dir = tempdir().unwrap();
         let file = create_preset_sample_metadata_file(dir.path());
-        sample_metadata::from_path(&file, None, UNDETERMINED_NAME).unwrap()
+        let opts = Opts::default();
+        SampleSheet::from_path(&file, &opts).unwrap().samples
     }
 
     /// Configuration struct for creating a FASTQ read

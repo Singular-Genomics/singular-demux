@@ -13,7 +13,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 fn main() {
     let opts = setup();
 
-    if let Err(err) = run(opts) {
+    if let Err(err) = run(&opts) {
         error!("{:#}", err);
         exit(1);
     }
