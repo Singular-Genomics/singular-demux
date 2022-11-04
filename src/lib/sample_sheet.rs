@@ -222,10 +222,10 @@ impl SampleSheet {
         let mut samples = vec![];
         for (ordinal, record) in reader.deserialize().enumerate() {
             // Note that line numbers a +2 to account for the header and convert to 1-based counting
-            let mut record: SampleMetadata = record
-                .map_err(|e| SampleSheetError::DeserializeRecord { source: e, line: ordinal + 2 })
-                .unwrap();
-            record = record.update_with(ordinal, ordinal + 2).unwrap();
+            let mut record: SampleMetadata = record.map_err(|e| {
+                SampleSheetError::DeserializeRecord { source: e, line: ordinal + 2 }
+            })?;
+            record = record.update_with(ordinal, ordinal + 2)?;
             samples.push(record);
         }
 
@@ -233,8 +233,7 @@ impl SampleSheet {
             samples,
             Some(opts.allowed_mismatches),
             &opts.undetermined_sample_name,
-        )
-        .unwrap();
+        )?;
 
         Ok(SampleSheet { samples, opts: opts.clone() })
     }
@@ -343,8 +342,7 @@ impl SampleSheet {
                 records[line_index].deserialize(Some(data_header)).map_err(|e| {
                     SampleSheetError::SampleInvalidLine { source: e, line: line_index + 1 }
                 })?;
-            let sample_metadata: SampleMetadata =
-                sample.update_with(ordinal, line_index + 1).unwrap();
+            let sample_metadata: SampleMetadata = sample.update_with(ordinal, line_index + 1)?;
             samples.push(sample_metadata);
 
             ordinal += 1;
@@ -355,8 +353,7 @@ impl SampleSheet {
             samples,
             Some(opts.allowed_mismatches),
             &opts.undetermined_sample_name,
-        )
-        .unwrap();
+        )?;
 
         Ok(SampleSheet { opts: opts.clone(), samples })
     }
