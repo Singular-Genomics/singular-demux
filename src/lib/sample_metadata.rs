@@ -398,8 +398,7 @@ mod tests {
         ];
 
         to_path(&input_path, samples.iter()).unwrap();
-        let mut opts = Opts::default();
-        opts.allowed_mismatches = 1;
+        let opts = Opts { allowed_mismatches: 1, ..Opts::default() };
         let r = SampleSheet::from_path(&input_path, &opts);
 
         assert_matches!(r, Err(SampleSheetError::InvalidBarcode { .. }));
@@ -446,8 +445,7 @@ mod tests {
 
         to_path(&input_path, samples.iter()).unwrap();
 
-        let mut opts = Opts::default();
-        opts.allowed_mismatches = 2;
+        let opts = Opts { allowed_mismatches: 2, ..Opts::default() };
 
         assert_matches!(
             SampleSheet::from_path(&input_path, &opts),
@@ -482,8 +480,7 @@ Sample2,GGGG
             .unwrap(),
         ];
 
-        let mut opts = Opts::default();
-        opts.allowed_mismatches = 1;
+        let opts = Opts { allowed_mismatches: 1, ..Opts::default() };
 
         assert_eq!(SampleSheet::from_path(&input_path, &opts).unwrap().samples, expected);
     }
@@ -503,8 +500,7 @@ Sample2,GGGG
 ";
         fs::write(&input_path, bytes).unwrap();
 
-        let mut opts = Opts::default();
-        opts.allowed_mismatches = 1;
+        let opts = Opts { allowed_mismatches: 1, ..Opts::default() };
 
         // Failes with barcode empty error
         assert_matches!(
