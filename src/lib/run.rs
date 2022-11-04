@@ -748,7 +748,7 @@ mod test {
         delim
             .write_csv(
                 &metadata,
-                SampleMetadata::new(String::from("foo"), b"TCGT".as_slice().into(), 0),
+                SampleMetadata::new(String::from("foo"), b"TCGT".as_slice().into(), 0, 2),
             )
             .unwrap();
 

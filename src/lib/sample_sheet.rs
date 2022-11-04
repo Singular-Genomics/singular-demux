@@ -226,6 +226,7 @@ impl SampleSheet {
                 SampleSheetError::DeserializeRecord { source: e, line: ordinal + 2 }
             })?;
             record = record.update_with(ordinal, ordinal + 2)?;
+            println!("record {:?}", record);
             samples.push(record);
         }
 

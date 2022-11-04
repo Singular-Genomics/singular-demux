@@ -1583,8 +1583,8 @@ mod test {
         ];
 
         let mut metadata = vec![
-            SampleMetadata::new(String::from("Sample1"), BString::from("ACTGACTG"), 0).unwrap(),
-            SampleMetadata::new(String::from("Sample2"), BString::from("GTCAGTCA"), 1).unwrap(),
+            SampleMetadata::new(String::from("Sample1"), BString::from("ACTGACTG"), 0, 2).unwrap(),
+            SampleMetadata::new(String::from("Sample2"), BString::from("GTCAGTCA"), 1, 3).unwrap(),
         ];
 
         let output_types = vec![SegmentType::Template];

@@ -371,9 +371,13 @@ mod test {
 
     #[test]
     fn test_filenames_simple() {
-        let sample =
-            SampleMetadata::new(String::from("Sample1"), "ACTGACTG".as_bytes().to_vec().into(), 1)
-                .unwrap();
+        let sample = SampleMetadata::new(
+            String::from("Sample1"),
+            "ACTGACTG".as_bytes().to_vec().into(),
+            1,
+            2,
+        )
+        .unwrap();
         let output_dir = "/tmp";
         let read_structures: Vec<ReadStructure> = vec!["+T", "+T", "10M", "10B", "10S"]
             .into_iter()

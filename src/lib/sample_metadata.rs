@@ -63,6 +63,7 @@ impl SampleMetadata {
         sample_id: String,
         barcode: BString,
         number: usize,
+        line_number: usize,
     ) -> Result<Self, SampleSheetError> {
         let fixed = Self::sanitize_barcode(barcode.as_ref());
         Self::validate_barcode(fixed.as_ref(), &sample_id, None)?;
@@ -74,7 +75,7 @@ impl SampleMetadata {
             lane: None,
             barcode: fixed,
             ordinal: number,
-            line_number: None,
+            line_number: Some(line_number),
         })
     }
 
@@ -339,10 +340,10 @@ mod tests {
         let tempdir = tempdir().unwrap();
         let input_path = tempdir.path().join("input.csv");
         let samples = vec![
-            SampleMetadata::new(String::from("Sample1"), BString::from("ACTG"), 0).unwrap(),
-            SampleMetadata::new(String::from("Sample2"), BString::from("CTGA"), 1).unwrap(),
-            SampleMetadata::new(String::from("Sample3"), BString::from("AAAA"), 2).unwrap(),
-            SampleMetadata::new(String::from("Sample4"), BString::from("GCGC"), 3).unwrap(),
+            SampleMetadata::new(String::from("Sample1"), BString::from("ACTG"), 0, 2).unwrap(),
+            SampleMetadata::new(String::from("Sample2"), BString::from("CTGA"), 1, 3).unwrap(),
+            SampleMetadata::new(String::from("Sample3"), BString::from("AAAA"), 2, 4).unwrap(),
+            SampleMetadata::new(String::from("Sample4"), BString::from("GCGC"), 3, 5).unwrap(),
         ];
 
         to_path(&input_path, samples.iter()).unwrap();
@@ -366,10 +367,10 @@ mod tests {
         let tempdir = tempdir().unwrap();
         let input_path = tempdir.path().join("input.csv");
         let samples = vec![
-            SampleMetadata::new(String::from("Sample1"), BString::from("ACNN"), 0).unwrap(),
-            SampleMetadata::new(String::from("Sample2"), BString::from("CTGA"), 1).unwrap(),
-            SampleMetadata::new(String::from("Sample3"), BString::from("AAAA"), 2).unwrap(),
-            SampleMetadata::new(String::from("Sample4"), BString::from("GCGC"), 3).unwrap(),
+            SampleMetadata::new(String::from("Sample1"), BString::from("ACNN"), 0, 2).unwrap(),
+            SampleMetadata::new(String::from("Sample2"), BString::from("CTGA"), 1, 3).unwrap(),
+            SampleMetadata::new(String::from("Sample3"), BString::from("AAAA"), 2, 4).unwrap(),
+            SampleMetadata::new(String::from("Sample4"), BString::from("GCGC"), 3, 5).unwrap(),
         ];
 
         to_path(&input_path, samples.iter()).unwrap();
@@ -386,15 +387,15 @@ mod tests {
         let input_path = tempdir.path().join("input.csv");
 
         let mut invalid =
-            SampleMetadata::new(String::from("Sample3"), BString::from("AAAA"), 2).unwrap();
+            SampleMetadata::new(String::from("Sample3"), BString::from("AAAA"), 2, 4).unwrap();
         // overwrite the "good" barcode that will be serialized
         invalid.raw_barcode = Some(BString::from(""));
 
         let samples = vec![
-            SampleMetadata::new(String::from("Sample1"), BString::from("ACTG"), 0).unwrap(),
-            SampleMetadata::new(String::from("Sample2"), BString::from("CTGA"), 1).unwrap(),
+            SampleMetadata::new(String::from("Sample1"), BString::from("ACTG"), 0, 2).unwrap(),
+            SampleMetadata::new(String::from("Sample2"), BString::from("CTGA"), 1, 3).unwrap(),
             invalid,
-            SampleMetadata::new(String::from("Sample4"), BString::from("GCGC"), 3).unwrap(),
+            SampleMetadata::new(String::from("Sample4"), BString::from("GCGC"), 3, 5).unwrap(),
         ];
 
         to_path(&input_path, samples.iter()).unwrap();
@@ -417,10 +418,10 @@ mod tests {
         let tempdir = tempdir().unwrap();
         let input_path = tempdir.path().join("input.csv");
         let samples = vec![
-            SampleMetadata::new(String::from("Sample1"), BString::from("ACGT"), 0).unwrap(),
-            SampleMetadata::new(String::from("Sample1"), BString::from("CTGA"), 1).unwrap(),
-            SampleMetadata::new(String::from("Sample3"), BString::from("AAAA"), 2).unwrap(),
-            SampleMetadata::new(String::from("Sample4"), BString::from("GCGC"), 3).unwrap(),
+            SampleMetadata::new(String::from("Sample1"), BString::from("ACGT"), 0, 2).unwrap(),
+            SampleMetadata::new(String::from("Sample1"), BString::from("CTGA"), 1, 3).unwrap(),
+            SampleMetadata::new(String::from("Sample3"), BString::from("AAAA"), 2, 4).unwrap(),
+            SampleMetadata::new(String::from("Sample4"), BString::from("GCGC"), 3, 5).unwrap(),
         ];
 
         to_path(&input_path, samples.iter()).unwrap();
@@ -436,11 +437,11 @@ mod tests {
         let tempdir = tempdir().unwrap();
         let input_path = tempdir.path().join("input.csv");
         let samples = vec![
-            SampleMetadata::new(String::from("Sample1"), BString::from("ACTG"), 0).unwrap(),
-            SampleMetadata::new(String::from("Sample2"), BString::from("CTGA"), 1).unwrap(),
-            SampleMetadata::new(String::from("Sample3"), BString::from("AAAA"), 2).unwrap(),
-            SampleMetadata::new(String::from("Sample4"), BString::from("GCGC"), 3).unwrap(),
-            SampleMetadata::new(String::from("Sample5"), BString::from("GGGC"), 4).unwrap(),
+            SampleMetadata::new(String::from("Sample1"), BString::from("ACTG"), 0, 2).unwrap(),
+            SampleMetadata::new(String::from("Sample2"), BString::from("CTGA"), 1, 3).unwrap(),
+            SampleMetadata::new(String::from("Sample3"), BString::from("AAAA"), 2, 4).unwrap(),
+            SampleMetadata::new(String::from("Sample4"), BString::from("GCGC"), 3, 5).unwrap(),
+            SampleMetadata::new(String::from("Sample5"), BString::from("GGGC"), 4, 6).unwrap(),
         ];
 
         to_path(&input_path, samples.iter()).unwrap();
@@ -470,8 +471,8 @@ Sample2,GGGG
         fs::write(&input_path, bytes).unwrap();
 
         let expected = vec![
-            SampleMetadata::new(String::from("Sample1"), BString::from("ACTG"), 0).unwrap(),
-            SampleMetadata::new(String::from("Sample2"), BString::from("GGGG"), 1).unwrap(),
+            SampleMetadata::new(String::from("Sample1"), BString::from("ACTG"), 0, 2).unwrap(),
+            SampleMetadata::new(String::from("Sample2"), BString::from("GGGG"), 1, 3).unwrap(),
             SampleMetadata::new_allow_invalid_bases(
                 UNDETERMINED_NAME.to_string(),
                 BString::from("NNNN"),
@@ -511,7 +512,7 @@ Sample2,GGGG
 
     #[test]
     fn test_empty_barcode() {
-        let r = SampleMetadata::new(String::from("Sample1"), BString::from(""), 0);
+        let r = SampleMetadata::new(String::from("Sample1"), BString::from(""), 0, 2);
         assert_matches!(r, Err(SampleSheetError::InvalidBarcode { .. }));
         if let Err(SampleSheetError::InvalidBarcode { barcode, id, reason, line }) = r {
             assert!(line.0.is_none());
