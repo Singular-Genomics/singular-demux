@@ -4,6 +4,30 @@
 
 This repository is home to the `sgdemux` tool for demultiplexing sequencing data generated on Singular Genomics' sequencing instruments.
 
+
+  * [Installation](#installation)
+    * [From Bioconda](#from-bioconda)
+    * [From Releases](#from-releases)
+    * [From Source](#from-source)
+  * [Contributing](#contributing)
+  * [Overview](#overview)
+  * [Usage](#usage)
+    * [Inputs](#inputs)
+          * [FASTQ Files](#fastq-files)
+          * [Read Structures](#read-structures)
+          * [Sample Metadata](#sample-metadata)
+          * [Full Argument List](#full-argument-list)
+          * [Performance Considerations](#performance-considerations)
+    * [Outputs](#outputs)
+          * [Demultiplexed FASTQs](#demultiplexed-fastqs)
+          * [Metrics](#metrics)
+              * [per_sample_metrics.tsv](#per_sample_metricstsv)
+              * [run_metrics.tsv](#run_metricstsv)
+              * [most_frequent_unmatched.tsv](#most_frequent_unmatchedtsv)
+              * [sample_barcode_hop_metrics.tsv](#sample_barcode_hop_metricstsv)
+  * [Advance Usage](#advance-usage)
+    * [Single Sample](#single-sample)
+
 ## Installation
 
 `sgdemux` may be installed from bioconda, downloaded from the releases page, or built from source.

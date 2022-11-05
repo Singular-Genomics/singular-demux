@@ -58,7 +58,8 @@ _R1.fastq.gz will be written to the output directory.
 
 The sample metadata file must be a two-column CSV file with headers.  The `Sample_ID` column
 must contain a unique, non-empty identifier for each sample.  The `Sample_Barcode` column must
-contain the unique set of sample barcode bases for the sample(s).
+contain the unique set of sample barcode bases for the sample(s).  For non-indexed runs, a single
+sample must be given with an empty value for the `Sample_Barcode` column.
 
 Example invocation:
 
