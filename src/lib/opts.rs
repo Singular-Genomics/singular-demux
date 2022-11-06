@@ -76,12 +76,6 @@ For support please contact: care@singulargenomics.com
 #[derive(Parser, Debug, Clone)]
 #[clap(name = TOOL_NAME, version = built_info::VERSION.as_str(), about=SHORT_USAGE, long_about=LONG_USAGE, term_width=0)]
 pub struct Opts {
-    /*
-    Developer Note: to facilitate these options being able to be specified in the sample sheet,
-    any change to the options herein, in particular adding/removing options and changing their
-    long argument name, must be reflected in the `[DEMUX_SETTINGS_TO_LONG_ARG]` constant map in
-    `sample_sheet.rs`.  Sorry for the inconvenience.
-     */
     /// Path to the input FASTQs.
     #[clap(long, short = 'f', display_order = 1, required = true, multiple_values = true)]
     pub fastqs: Vec<PathBuf>,
