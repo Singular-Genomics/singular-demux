@@ -183,7 +183,7 @@ impl SampleSheet {
             let rec = record.unwrap();
             records.push(rec);
         }
-        SampleSheet::from_string_records(&records, opts)
+        SampleSheet::from_sample_sheet_string_records(&records, opts)
     }
 
     // Reads sample metadata from a simple CSV.  No command line options are able to be specified
@@ -267,7 +267,10 @@ impl SampleSheet {
         }
     }
 
-    fn from_string_records(
+    /// Reads from a Sample Sheet represented as a vector if `StringRecord`s.  Skips over lines
+    /// optionally until the `[Demux]` section is found, upating the given command line options,
+    /// and then the `[Data]` section, to parse a list of samples.
+    fn from_sample_sheet_string_records(
         records: &Vec<StringRecord>,
         opts: &Opts,
     ) -> Result<Self, SampleSheetError> {
@@ -356,7 +359,7 @@ mod test {
     fn test_empty_sample_sheet() {
         let records: Vec<StringRecord> = vec![];
         assert_matches!(
-            SampleSheet::from_string_records(&records, &Opts::default()),
+            SampleSheet::from_sample_sheet_string_records(&records, &Opts::default()),
             Err(SampleSheetError::Empty)
         );
     }
@@ -374,7 +377,7 @@ mod test {
             StringRecord::from(vec!["[Data]"]),
         ];
 
-        let result = SampleSheet::from_string_records(&records, &Opts::default());
+        let result = SampleSheet::from_sample_sheet_string_records(&records, &Opts::default());
         assert_matches!(result, Err(SampleSheetError::DemuxOptionsParsing { kind: _, args: _ }));
         if let Err(SampleSheetError::DemuxOptionsParsing { kind, args }) = result {
             assert_eq!(kind, UnknownArgument.as_str().unwrap());
@@ -395,7 +398,7 @@ mod test {
             StringRecord::from(vec!["[Data]"]),
         ];
 
-        let result = SampleSheet::from_string_records(&records, &Opts::default());
+        let result = SampleSheet::from_sample_sheet_string_records(&records, &Opts::default());
         assert_matches!(result, Err(SampleSheetError::DemuxOptionsParsing { kind: _, args: _ }));
         if let Err(SampleSheetError::DemuxOptionsParsing { kind, args }) = result {
             assert_eq!(kind, UnknownArgument.as_str().unwrap());
@@ -413,7 +416,7 @@ mod test {
             StringRecord::from(vec!["Bar"]),
         ];
 
-        let result = SampleSheet::from_string_records(&records, &Opts::default());
+        let result = SampleSheet::from_sample_sheet_string_records(&records, &Opts::default());
         assert_matches!(result, Err(SampleSheetError::DemuxOptionsParsing { kind: _, args: _ }));
         if let Err(SampleSheetError::DemuxOptionsParsing { kind, args }) = result {
             assert_eq!(kind, MissingRequiredArgument.as_str().unwrap());
@@ -431,7 +434,7 @@ mod test {
             StringRecord::from(vec!["read-structures", "8B +T"]),
         ];
 
-        let result = SampleSheet::from_string_records(&records, &Opts::default());
+        let result = SampleSheet::from_sample_sheet_string_records(&records, &Opts::default());
         assert_matches!(result, Err(SampleSheetError::DemuxOptionsParsing { kind: _, args: _ }));
         if let Err(SampleSheetError::DemuxOptionsParsing { kind, args }) = result {
             assert_eq!(kind, MissingRequiredArgument.as_str().unwrap());
@@ -449,7 +452,7 @@ mod test {
             StringRecord::from(vec!["fastqs", "/dev/null"]),
         ];
 
-        let result = SampleSheet::from_string_records(&records, &Opts::default());
+        let result = SampleSheet::from_sample_sheet_string_records(&records, &Opts::default());
         assert_matches!(result, Err(SampleSheetError::DemuxOptionsParsing { kind: _, args: _ }));
         if let Err(SampleSheetError::DemuxOptionsParsing { kind, args }) = result {
             assert_eq!(kind, MissingRequiredArgument.as_str().unwrap());
@@ -468,7 +471,7 @@ mod test {
             StringRecord::from(vec!["fastqs", "/dev/null"]),
         ];
         assert_matches!(
-            SampleSheet::from_string_records(&records, &Opts::default()),
+            SampleSheet::from_sample_sheet_string_records(&records, &Opts::default()),
             Err(SampleSheetError::NoData)
         );
     }
@@ -485,7 +488,7 @@ mod test {
             StringRecord::from(vec!["[Data]"]),
         ];
         assert_matches!(
-            SampleSheet::from_string_records(&records, &Opts::default()),
+            SampleSheet::from_sample_sheet_string_records(&records, &Opts::default()),
             Err(SampleSheetError::NoSamples)
         );
     }
