@@ -53,9 +53,6 @@ pub enum SampleSheetError {
     #[error("The '[Demux]' section is missing")]
     NoDemuxHeader,
 
-    #[error("Unknown demultiplexing option '{kind}' on line {line}")]
-    UnknownDemuxOption { kind: String, line: usize },
-
     #[error("Could not parse the demultiplexing options, {kind}: {args}")]
     DemuxOptionsParsing { kind: String, args: String },
 
@@ -119,34 +116,6 @@ pub enum SampleSheetError {
 
     #[error("Sample metadata must include at least one sample")]
     ZeroSamples,
-}
-
-lazy_static! {
-    static ref DEMUX_SETTINGS_TO_LONG_ARG: HashMap<&'static str, &'static str> = {
-        /*
-        Developer note: the following are options available in the "[Demux]" section
-        of a sample sheet.  They are defined in the same order in Opts for easier maintainability.
-        */
-        let mut m = HashMap::new();
-        m.insert("Input FASTQ Path", "--fastqs"); // required
-        m.insert("Output Directory", "--output-dir"); // required
-        m.insert("Read Structure", "--read-structures"); // required
-        m.insert("Allowed Mismatches", "--allowed-mismatches");
-        m.insert("Minimum Mismatch Delta ", "--min-delta");
-        // TODO: --free-ns
-        m.insert("Maximum No Calls", "--max-no-calls");
-        m.insert("Mask Template Bases", "--quality-mask-threshold");
-        m.insert("Remove Control Reads", "--filter-control-reads");
-        m.insert("Remove Fail Quality Filter", "--filterfailing-quality");
-        m.insert("Read Segment Types", "--output-types");
-        m.insert("Undetermined Name", "--undetermined-sample-name");
-        m.insert("Maximum Unmatched Barcodes", "--most-unmatched-to-output");
-        m.insert("Demultipelxing Threads", "--demux-threads");
-        m.insert("Compression Threads", "--compressor-threads");
-        m.insert("Writing Threads", "--writer-threads");
-        m.insert("Matcher", "--override_matcher");
-        m
-    };
 }
 
 #[derive(Debug, Clone)]
@@ -250,27 +219,30 @@ impl SampleSheet {
             return Err(SampleSheetError::NoDemuxHeader);
         }
         line_index += 1; // skip over "[Demux]"
-        let mut argv: Vec<&str> = vec![TOOL_NAME];
+        let mut argv: Vec<String> = vec![TOOL_NAME.to_string()];
         while line_index < records.len() {
             let record = &records[line_index];
             if !record.is_empty() && &record[0] == "[Data]" {
                 break;
             }
             if record.len() >= 2 {
+                // Command line arguments and their values are not checked here to be valid.  This
+                // happens below when we try to build the opts.
                 let key = record[0].to_string();
-                if let Some(long_arg) = DEMUX_SETTINGS_TO_LONG_ARG.get(&key[..]) {
-                    argv.push(long_arg);
-                    argv.push(&record[1]);
-                } else {
-                    return Err(SampleSheetError::UnknownDemuxOption {
-                        kind: key.to_string(),
-                        line: line_index + 1,
-                    });
+                let argument = format!("--{}", key);
+                argv.push(argument);
+
+                // For boolean options, only the presence of a key and the value is ignored.  Thus,
+                // when an empty value is given, assume the argument is a boolean.
+                if !record[1].is_empty() {
+                    argv.push(record[1].to_string());
                 }
             }
             line_index += 1;
         }
 
+        // Build the opts given the arguments.  This is where any unknown command line argument
+        // will raise an error, and illegal value too.
         match opts.try_update_from(argv.into_iter()) {
             Ok(()) => Ok(line_index),
             Err(err) => {
@@ -364,7 +336,7 @@ impl SampleSheet {
 mod test {
     use crate::opts::Opts;
     use crate::sample_sheet::{SampleSheet, SampleSheetError};
-    use clap::error::ErrorKind::MissingRequiredArgument;
+    use clap::error::ErrorKind::{MissingRequiredArgument, UnknownArgument};
     use csv::StringRecord;
     use itertools::Itertools;
     use matches::assert_matches;
@@ -379,13 +351,54 @@ mod test {
     }
 
     #[test]
+    fn test_unknown_demux_option_flag() {
+        let records: Vec<StringRecord> = vec![
+            StringRecord::from(vec!["[Header]"]),
+            StringRecord::from(vec!["Date", "Today"]),
+            StringRecord::from(vec!["Run Name", "Foo"]),
+            StringRecord::from(vec!["[Demux]"]),
+            StringRecord::from(vec!["read-structures", "8B +T"]),
+            StringRecord::from(vec!["fastqs", "/dev/null"]),
+            StringRecord::from(vec!["unknown", ""]),
+            StringRecord::from(vec!["[Data]"]),
+        ];
+
+        let result = SampleSheet::from_string_records(&records, &Opts::default());
+        assert_matches!(result, Err(SampleSheetError::DemuxOptionsParsing { kind: _, args: _ }));
+        if let Err(SampleSheetError::DemuxOptionsParsing { kind, args }) = result {
+            assert_eq!(kind, UnknownArgument.as_str().unwrap());
+            assert_eq!(args, "--unknown".to_string());
+        }
+    }
+
+    #[test]
+    fn test_unknown_demux_option_with_value() {
+        let records: Vec<StringRecord> = vec![
+            StringRecord::from(vec!["[Header]"]),
+            StringRecord::from(vec!["Date", "Today"]),
+            StringRecord::from(vec!["Run Name", "Foo"]),
+            StringRecord::from(vec!["[Demux]"]),
+            StringRecord::from(vec!["read-structures", "8B +T"]),
+            StringRecord::from(vec!["fastqs", "/dev/null"]),
+            StringRecord::from(vec!["unknown", "value"]),
+            StringRecord::from(vec!["[Data]"]),
+        ];
+
+        let result = SampleSheet::from_string_records(&records, &Opts::default());
+        assert_matches!(result, Err(SampleSheetError::DemuxOptionsParsing { kind: _, args: _ }));
+        if let Err(SampleSheetError::DemuxOptionsParsing { kind, args }) = result {
+            assert_eq!(kind, UnknownArgument.as_str().unwrap());
+            assert_eq!(args, "--unknown".to_string());
+        }
+    }
+
+    #[test]
     fn test_demux_missing_fastqs_and_read_structures() {
         let records: Vec<StringRecord> = vec![
             StringRecord::from(vec!["[Header]"]),
             StringRecord::from(vec!["Date", "Today"]),
             StringRecord::from(vec!["Run Name", "Foo"]),
             StringRecord::from(vec!["[Demux]"]),
-            StringRecord::from(vec!["Bar"]),
             StringRecord::from(vec!["Bar"]),
         ];
 
@@ -404,8 +417,7 @@ mod test {
             StringRecord::from(vec!["Date", "Today"]),
             StringRecord::from(vec!["Run Name", "Foo"]),
             StringRecord::from(vec!["[Demux]"]),
-            StringRecord::from(vec!["Bar"]),
-            StringRecord::from(vec!["Read Structure", "8B +T"]),
+            StringRecord::from(vec!["read-structures", "8B +T"]),
         ];
 
         let result = SampleSheet::from_string_records(&records, &Opts::default());
@@ -423,8 +435,7 @@ mod test {
             StringRecord::from(vec!["Date", "Today"]),
             StringRecord::from(vec!["Run Name", "Foo"]),
             StringRecord::from(vec!["[Demux]"]),
-            StringRecord::from(vec!["Bar"]),
-            StringRecord::from(vec!["Input FASTQ Path", "/dev/null"]),
+            StringRecord::from(vec!["fastqs", "/dev/null"]),
         ];
 
         let result = SampleSheet::from_string_records(&records, &Opts::default());
@@ -442,8 +453,8 @@ mod test {
             StringRecord::from(vec!["Date", "Today"]),
             StringRecord::from(vec!["Run Name", "Foo"]),
             StringRecord::from(vec!["[Demux]"]),
-            StringRecord::from(vec!["Read Structure", "8B +T"]),
-            StringRecord::from(vec!["Input FASTQ Path", "/dev/null"]),
+            StringRecord::from(vec!["read-structures", "8B +T"]),
+            StringRecord::from(vec!["fastqs", "/dev/null"]),
         ];
         assert_matches!(
             SampleSheet::from_string_records(&records, &Opts::default()),
@@ -458,8 +469,8 @@ mod test {
             StringRecord::from(vec!["Date", "Today"]),
             StringRecord::from(vec!["Run Name", "Foo"]),
             StringRecord::from(vec!["[Demux]"]),
-            StringRecord::from(vec!["Read Structure", "8B +T"]),
-            StringRecord::from(vec!["Input FASTQ Path", "/dev/null"]),
+            StringRecord::from(vec!["read-structures", "8B +T"]),
+            StringRecord::from(vec!["fastqs", "/dev/null"]),
             StringRecord::from(vec!["[Data]"]),
         ];
         assert_matches!(
@@ -475,8 +486,8 @@ mod test {
             Run Name,Foo\n\
             [Demux]\n\
             Bar\n\
-            Input FASTQ Path,/dev/null\n\
-            Read Structure,8B +T\n\
+            fastqs,/dev/null\n\
+            read-structures,8B +T\n\
             [Data]\n\
             Sample_ID,Index1_Name,Index1_Sequence,Index2_Name,Index2_SequenceLane,Lane,Lane_Name,Project,Loading_Concentration,Application,Notes,Reference\n\
             S1,I1,AAAA,I2,CCCC,1,Lane1,S1_Project,,,,\n\
@@ -522,4 +533,43 @@ mod test {
         // samples (one extra for the undetermined)
         assert_eq!(sample_sheet.samples.len(), 4);
     }
+
+    #[test]
+    fn test_ok_sample_sheet_no_demux() {
+        let file_contents ="[Header]\n\
+            Date,Today\n\
+            Run Name,Foo\n\
+            [Demux]\n\
+            Bar\n\
+            fastqs,/dev/null\n\
+            read-structures,+T\n\
+            [Data]\n\
+            Sample_ID,Index1_Name,Index1_Sequence,Index2_Name,Index2_SequenceLane,Lane,Lane_Name,Project,Loading_Concentration,Application,Notes,Reference\n\
+            S1,I1,,I2,,1,Lane1,S1_Project,,,,\n\
+            ".to_string();
+
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.as_ref().join("sample_metadata.csv");
+        std::fs::write(&output, file_contents).expect("Failed to write sample metadata to file.");
+
+        let sample_sheet = SampleSheet::from_path(&output, &Opts::default()).unwrap();
+
+        // read structure
+        assert_eq!(
+            sample_sheet.opts.read_structures.iter().map(|r| format!("{}", r)).join(""),
+            "+T"
+        );
+
+        // input path
+        assert_eq!(
+            sample_sheet.opts.fastqs.iter().map(|r| format!("{:?}", r)).collect::<Vec<String>>(),
+            vec!["\"/dev/null\""]
+        );
+
+        // samples (one extra for the undetermined)
+        assert_eq!(sample_sheet.samples.len(), 1);
+        assert_eq!(sample_sheet.samples[0].barcode.to_string(), "");
+    }
+
+    // TODO test same sample, multiple lanes
 }
