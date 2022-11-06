@@ -77,8 +77,10 @@ pub fn filenames<P: AsRef<Path>>(
             if output_types_to_write.contains(&kind) {
                 let type_number = counter.entry(kind).or_insert(1);
                 output_paths.push(output_dir.as_ref().join(format!(
-                    "{}_{}{}.fastq.gz",
+                    "{}_S{}_L00{}_{}{}_001.fastq.gz",
                     sample.sample_id,
+                    sample.ordinal + 1,
+                    1,
                     segment_kind_to_fastq_id(&kind),
                     type_number
                 )));
