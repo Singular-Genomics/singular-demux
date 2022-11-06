@@ -56,10 +56,13 @@ should be provided per instrument read.  One read structure should be provided p
 The output directory specified with --output must exist.  Per-sample files with suffixes like
 _R1.fastq.gz will be written to the output directory.
 
-The sample metadata file must be a two-column CSV file with headers.  The `Sample_ID` column
-must contain a unique, non-empty identifier for each sample.  The `Sample_Barcode` column must
-contain the unique set of sample barcode bases for the sample(s).  For non-indexed runs, a single
-sample must be given with an empty value for the `Sample_Barcode` column.
+The sample metadata file may be a Sample Sheet or a simple two-column CSV file with headers.
+The Sample Sheet may haave a `[Demux]` section for command line options, and must have a `[Data]`
+section for sample information.  The `Sample_ID` column must contain a unique, non-empty identifier
+for each sample.  Both `Index1_Sequence` and `Index2_Sequence` must be present with values for
+indexed runs.  For non-indexed runs, a single sample must be given with an empty value for the 
+`Index1_Sequence` and `Index2_Sequence` columns.  For the simple two-column CSV, the 
+`Sample_Barcode` column must contain the unique set of sample barcode bases for the sample(s).
 
 Example invocation:
 

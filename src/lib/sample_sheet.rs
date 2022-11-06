@@ -128,9 +128,10 @@ impl SampleSheet {
     /// Builds a `SampleSheet` from the CSV at the given path.
     ///
     /// The CSV may be a Singular Genomics Sample Sheet, with the optional `[Demux]` section and
-    /// optiona `[Data]` section, or a simple CSV file with
+    /// required `[Data]` section, or a simple CSV file with
     pub fn from_path<P: AsRef<Path>>(path: &P, opts: &Opts) -> Result<Self, SampleSheetError> {
-        // Build the input CSV reader
+        // Read in all the lines so we can check if we have a simple CSV file or a full-fledged
+        // Sample Sheet.
         let io = Io::default();
         let lines = io.read_lines(path).unwrap();
 
@@ -151,6 +152,8 @@ impl SampleSheet {
             found
         };
 
+        // Use the read in lines again, so we don't have to re-read the input file (could be
+        // piped?)
         let data = lines.join("\n");
         let reader = data.as_bytes();
         if is_sample_sheet {
@@ -160,6 +163,8 @@ impl SampleSheet {
         }
     }
 
+    // Reads sample metadata and command line options from a full-fledged Singular Genomics
+    // Sample Sheet.
     fn from_sample_sheet_reader<R: std::io::Read>(
         reader: R,
         opts: &Opts,
@@ -181,6 +186,8 @@ impl SampleSheet {
         SampleSheet::from_string_records(&records, opts)
     }
 
+    // Reads sample metadata from a simple CSV.  No command line options are able to be specified
+    // in this format; use a sample sheet in that case.
     fn from_metadata_csv_reader<R: std::io::Read>(
         reader: R,
         opts: &Opts,
@@ -195,7 +202,6 @@ impl SampleSheet {
                 SampleSheetError::DeserializeRecord { source: e, line: ordinal + 2 }
             })?;
             record = record.update_with(ordinal, ordinal + 2)?;
-            println!("record {:?}", record);
             samples.push(record);
         }
 
@@ -208,6 +214,11 @@ impl SampleSheet {
         Ok(SampleSheet { samples, opts: opts.clone() })
     }
 
+    // Updates the given command line options with values from the `[Demux]` section.
+    // Starting at the given line index, read in any demultiplexing command line options and
+    // values.  The option names must be the same name as on the command line, with the leading
+    // `--` ommited.  If the value is empty, the command line option is assumed to be a flag.
+    // Command line options with empty values are not supported.  The given opts are updated.
     fn slurp_demux_opts(
         records: &Vec<StringRecord>,
         start_line_index: usize,
