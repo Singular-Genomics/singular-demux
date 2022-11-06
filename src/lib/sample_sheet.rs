@@ -5,8 +5,6 @@ use clap::Parser;
 use csv::{ReaderBuilder, StringRecord, Trim};
 use fgoxide::io::Io;
 use itertools::Itertools;
-use lazy_static::lazy_static;
-use std::collections::HashMap;
 use std::fmt::Display;
 use std::path::Path;
 use thiserror::Error;
@@ -220,7 +218,7 @@ impl SampleSheet {
     // `--` ommited.  If the value is empty, the command line option is assumed to be a flag.
     // Command line options with empty values are not supported.  The given opts are updated.
     fn slurp_demux_opts(
-        records: &Vec<StringRecord>,
+        records: &[StringRecord],
         start_line_index: usize,
         opts: &mut Opts,
     ) -> Result<usize, SampleSheetError> {
@@ -271,7 +269,7 @@ impl SampleSheet {
     /// optionally until the `[Demux]` section is found, upating the given command line options,
     /// and then the `[Data]` section, to parse a list of samples.
     fn from_sample_sheet_string_records(
-        records: &Vec<StringRecord>,
+        records: &[StringRecord],
         opts: &Opts,
     ) -> Result<Self, SampleSheetError> {
         if records.is_empty() {

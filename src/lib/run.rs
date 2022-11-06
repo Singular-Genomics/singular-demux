@@ -27,7 +27,7 @@ pub fn run(opts: &Opts) -> Result<(), anyhow::Error> {
     let read_filter_config = opts.as_read_filter_config();
 
     let output_types_to_write = opts.output_types_to_write()?;
-    let sample_sheet = sample_sheet::SampleSheet::from_path(&opts.sample_metadata, &opts)?;
+    let sample_sheet = sample_sheet::SampleSheet::from_path(&opts.sample_metadata, opts)?;
     let samples = sample_sheet.samples;
     let opts = sample_sheet.opts;
 
