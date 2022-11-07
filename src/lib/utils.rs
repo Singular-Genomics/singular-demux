@@ -1,6 +1,6 @@
 //! Utility functions.
 use std::{
-    fs::File,
+    fs::{self, File},
     io::{BufReader, Read},
     path::{Path, PathBuf},
 };
@@ -13,6 +13,7 @@ use gzp::{deflate::Bgzf, BlockFormatSpec, GzpError, BUFSIZE};
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use read_structure::{ReadStructure, SegmentType};
+use regex::Regex;
 
 lazy_static! {
     /// Return the number of cpus as a String
@@ -190,6 +191,59 @@ To compress an uncompressed FASTQ file with bgzip:
         filename, format, filename, filename, filename,
     );
     Err(anyhow!(message).context(context))
+}
+
+pub static INPUT_FASTQ_SUFFIX: &str = "_001.fastq.gz";
+
+lazy_static! {
+    /// <*>_L00#_<R# or I#>_001.fastq.gz
+    static ref INPUT_FASTQ_REGEX: Regex = Regex::new(r"^(.*)_L00(\d{1})_([RIUS])(\d{1})_001.fastq.gz$").unwrap();
+}
+
+pub struct InputFastq {
+    path: PathBuf,
+    prefix: String,
+    lane: usize,
+    kind: SegmentType,
+    kind_number: i32,
+}
+
+impl InputFastq {
+    pub fn new<P: AsRef<Path>>(path: P) -> Option<InputFastq> {
+        let file_name = path.as_ref().file_name().unwrap().to_string_lossy();
+        match INPUT_FASTQ_REGEX.captures(&file_name) {
+            None => None,
+            Some(captures) => {
+                let prefix = captures.get(1).unwrap().as_str().to_string();
+                let lane = captures.get(2).unwrap().as_str().parse::<usize>().unwrap();
+                let kind: SegmentType = match captures.get(3).unwrap().as_str() {
+                    "R" => SegmentType::Template,
+                    "I" => SegmentType::SampleBarcode,
+                    "U" => SegmentType::MolecularBarcode,
+                    "S" => SegmentType::Skip,
+                    knd => panic!("Could not determine kind from {}", knd),
+                };
+                let kind_number = captures.get(4).unwrap().as_str().parse::<i32>().unwrap();
+
+                Some(InputFastq {
+                    path: path.as_ref().to_path_buf(),
+                    prefix,
+                    lane,
+                    kind,
+                    kind_number,
+                })
+            }
+        }
+    }
+
+    pub fn slurp<P: AsRef<Path>>(input_dir: P) -> Vec<InputFastq> {
+        fs::read_dir(input_dir)
+            .unwrap()
+            .map(|res| res.map(|e| e.path()).unwrap())
+            .filter(|p| p.is_file() && p.ends_with(INPUT_FASTQ_SUFFIX))
+            .filter_map(InputFastq::new)
+            .collect()
+    }
 }
 
 #[cfg(not(tarpaulin_include))]
