@@ -140,7 +140,8 @@ One Read Structure must be provided for each input FASTQ file, in the same order
 
 ##### Sample Sheet
 
-Information about the sample(s) to demultiplex as well as command line options are specified within a Sample Sheet.
+Information about the sample(s) to demultiplex is specified within a Sample Sheet. 
+Command line options for demultiplexing may also be passed via the Sample Sheet.
 
 
 ###### Specifying Demultiplexing Command Line Options
@@ -193,7 +194,7 @@ Both `Sample_ID`s and `Sample_Barcode`s must be unique within the file, and both
 An example follows:
 
 ```text
-Sample_ID,SampleBarcode
+Sample_ID,Sample_Barcode
 s1,ACTGGTCA
 s2,ATACGAAC
 ``` 
