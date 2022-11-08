@@ -190,7 +190,7 @@ impl SampleSheet {
             let mut record: SampleMetadata = record.map_err(|e| {
                 SampleSheetError::DeserializeRecord { source: e, line: ordinal + 2 }
             })?;
-            record = record.update_with(ordinal, ordinal + 2)?;
+            record = record.update_with_and_set_demux_barcode(ordinal, ordinal + 2)?;
             samples.push(record);
         }
 
@@ -318,7 +318,8 @@ impl SampleSheet {
                 records[line_index].deserialize(Some(data_header)).map_err(|e| {
                     SampleSheetError::SampleInvalidLine { source: e, line: line_index + 1 }
                 })?;
-            let sample_metadata: SampleMetadata = sample.update_with(ordinal, line_index + 1)?;
+            let sample_metadata: SampleMetadata =
+                sample.update_with_and_set_demux_barcode(ordinal, line_index + 1)?;
             samples.push(sample_metadata);
 
             ordinal += 1;

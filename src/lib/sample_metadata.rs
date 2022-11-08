@@ -107,7 +107,7 @@ impl SampleMetadata {
     /// Updates the sample metadata.
     ///
     /// 1. Sets the ordinal
-    /// 2. Sets the sample barcode.
+    /// 2. Sets the sample barcode to use for demultiplexing.
     ///
     /// If `raw_barcode` is not `None`, then both `index1` and `index2` must be `None`.
     /// Furthermore, if the sample barcode is present across multiple reads (ex. dual-index, or
@@ -119,7 +119,7 @@ impl SampleMetadata {
     /// otherwise `barcode` will be the index that is present.
     ///
     /// The final `barcode` will have non-ACTG characters removed.
-    pub fn update_with(
+    pub fn update_with_and_set_demux_barcode(
         mut self,
         ordinal: usize,
         line_number: usize,
