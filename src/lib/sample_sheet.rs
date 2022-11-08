@@ -131,7 +131,7 @@ impl SampleSheet {
         // Read in all the lines so we can check if we have a simple CSV file or a full-fledged
         // Sample Sheet.
         let io = Io::default();
-        let lines = io.read_lines(path).unwrap();
+        let lines = io.read_lines(path)?;
 
         if lines.is_empty() {
             return Err(SampleSheetError::Empty);
@@ -139,16 +139,7 @@ impl SampleSheet {
 
         // If either [Demux] or [Data] found at the start of the line, assume a full-fledged
         // sample sheet.  Otherwise, fallback to a simple CSV with a header line.
-        let is_sample_sheet: bool = {
-            let mut found = false;
-            for line in &lines {
-                if line.starts_with("[Demux]") || line.starts_with("[Data]") {
-                    found = true;
-                    break;
-                }
-            }
-            found
-        };
+        let is_sample_sheet: bool = lines.iter().any(|l| l.starts_with("[Demux]") || l.starts_with("[Data]"));
 
         // Use the read in lines again, so we don't have to re-read the input file (could be
         // piped?)
@@ -178,7 +169,7 @@ impl SampleSheet {
         // Read in all the records
         let mut records: Vec<StringRecord> = vec![];
         for record in reader.records() {
-            let rec = record.unwrap();
+            let rec = record?;
             records.push(rec);
         }
         SampleSheet::from_sample_sheet_string_records(&records, opts)
