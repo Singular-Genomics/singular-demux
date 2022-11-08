@@ -63,7 +63,7 @@ pub fn segment_kind_to_fastq_id(kind: &SegmentType) -> char {
 }
 
 /// Determine the output file name for the given sample, segment type, and type number.
-pub fn filename(sample: &SampleMetadata, kind: &SegmentType, type_number: i32) -> String {
+pub fn filename(sample: &SampleMetadata, kind: &SegmentType, type_number: u32) -> String {
     format!(
         "{}_S{}_L00{}_{}{}_001.fastq.gz",
         sample.sample_id,
