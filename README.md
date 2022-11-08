@@ -172,8 +172,8 @@ The sample metadata file may be a Sample Sheet or a simple two-column CSV file w
 
 The Sample Sheet may haave a `[Demux]` section for command line options, and must have a `[Data]`
 section for sample information.  The `Sample_ID` column must contain a unique, non-empty identifier
-for each sample.  Both `Index1_Sequence` and `Index2_Sequence` must be present with values for
-indexed runs.  For non-indexed runs, a single sample must be given with an empty value for the 
+for each sample.  One or both of `Index1_Sequence` and `Index2_Sequence` must be present with values for
+indexed runs.  For non-indexed runs, a single sample must be given with an empty value for both the 
 `Index1_Sequence` and `Index2_Sequence` columns.
 Both `Sample_ID`s and the `Index1_Sequence`/`Index2_Sequence` combinations must be unique within the file, and both columns are required for all samples.
 
