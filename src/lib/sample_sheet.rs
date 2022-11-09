@@ -340,6 +340,7 @@ impl SampleSheet {
         for record in &records[1..] {
             // allow an empty line
             if record.is_empty() {
+                line_index += 1;
                 continue;
             }
             // make sure we have the correct number of columns
@@ -407,7 +408,7 @@ impl SampleSheet {
             &opts.undetermined_sample_name,
         )?;
 
-        Ok(SampleSheet { opts, samples })
+        Ok(SampleSheet { samples, opts })
     }
 }
 

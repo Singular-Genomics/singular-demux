@@ -453,34 +453,35 @@ mod tests {
         );
     }
 
-    // #[test]
-    // fn test_blank_lines_skipped() {
-    //     let tempdir = tempdir().unwrap();
-    //     let input_path = tempdir.path().join("input.csv");
+    #[test]
+    fn test_blank_lines_skipped() {
+        let tempdir = tempdir().unwrap();
+        let input_path = tempdir.path().join("input.csv");
 
-    //     let bytes = "\
-    // Sample_ID,Sample_Barcode
-    // Sample1,ACTG
+        let bytes = "\
+Sample_ID,Sample_Barcode
+Sample1,ACTG
 
-    // Sample2,GGGG
-    // ";
-    //     fs::write(&input_path, bytes).unwrap();
+Sample2,GGGG
+";
+        fs::write(&input_path, bytes).unwrap();
 
-    //     let expected = vec![
-    //         SampleMetadata::new(String::from("Sample1"), BString::from("ACTG"), 0, 2).unwrap(),
-    //         SampleMetadata::new(String::from("Sample2"), BString::from("GGGG"), 1, 3).unwrap(),
-    //         SampleMetadata::new_allow_invalid_bases(
-    //             UNDETERMINED_NAME.to_string(),
-    //             BString::from("NNNN"),
-    //             2,
-    //         )
-    //         .unwrap(),
-    //     ];
+        let opts = Opts::default();
+        let expected = vec![
+            SampleMetadata::new(String::from("Sample1"), BString::from("ACTG"), 0, 2).unwrap(),
+            SampleMetadata::new(String::from("Sample2"), BString::from("GGGG"), 1, 3).unwrap(),
+            SampleMetadata::new_allow_invalid_bases(
+                opts.undetermined_sample_name.to_string(),
+                BString::from("NNNN"),
+                2,
+            )
+            .unwrap(),
+        ];
 
-    //     let opts = Opts { sample_metadata: input_path, allowed_mismatches: 1, ..Opts::default() };
+        let opts = Opts { sample_metadata: input_path, allowed_mismatches: 1, ..Opts::default() };
 
-    //     assert_eq!(SampleSheet::from_path(opts).unwrap().samples, expected);
-    // }
+        assert_eq!(SampleSheet::from_path(opts).unwrap().samples, expected);
+    }
 
     #[test]
     fn test_blank_records_fail() {
@@ -488,21 +489,22 @@ mod tests {
         let input_path = tempdir.path().join("input.csv");
 
         let bytes = "\
-    Sample_ID,Sample_Barcode
-    Sample1,ACTG
+Sample_ID,Sample_Barcode
+Sample1,ACTG
 
-    Sample2,GGGG
-    ,
+Sample2,GGGG
+,
 
-    ";
+";
         fs::write(&input_path, bytes).unwrap();
 
         let opts = Opts { sample_metadata: input_path, allowed_mismatches: 1, ..Opts::default() };
         let result = SampleSheet::from_path(opts);
-        assert_matches!(result, Err(SampleSheetError::DeserializeRecord { source: _, line: _ }));
-        if let Err(SampleSheetError::DeserializeRecord { source: _, line }) = result {
-            assert_eq!(line, 5);
-        }
+        assert_matches!(
+            result,
+            Err(SampleSheetError::InvalidBarcode { barcode: _, id: _, reason: _, line: _ })
+        );
+        // do not validate the line number because blank lines are not counted
     }
 
     #[test]
