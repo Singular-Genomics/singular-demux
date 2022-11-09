@@ -21,13 +21,13 @@ use crate::{
 
 /// Run demultiplexing.
 #[allow(clippy::too_many_lines)]
-pub fn run(opts: &Opts) -> Result<(), anyhow::Error> {
+pub fn run(opts: Opts) -> Result<(), anyhow::Error> {
     eprint!("{}", LOGO);
 
     let read_filter_config = opts.as_read_filter_config();
 
     let output_types_to_write = opts.output_types_to_write()?;
-    let sample_sheet = sample_sheet::SampleSheet::from_path(&opts.sample_metadata, opts)?;
+    let sample_sheet = sample_sheet::SampleSheet::from_path(opts)?;
     let samples = sample_sheet.samples;
     let opts = sample_sheet.opts;
 
@@ -350,7 +350,7 @@ mod test {
             ..Opts::default()
         };
 
-        run(&opts).unwrap();
+        run(opts).unwrap();
 
         let fastq = output.join(format!("{}_R1.fastq.gz", "Sample1"));
         slurp_fastq(&fastq)
@@ -406,7 +406,7 @@ mod test {
             min_delta: 3,
             ..Opts::default()
         };
-        run(&opts).unwrap();
+        run(opts).unwrap();
     }
 
     #[rstest]
@@ -436,7 +436,7 @@ mod test {
             min_delta: 3,
             ..Opts::default()
         };
-        run(&opts).unwrap();
+        run(opts).unwrap();
     }
 
     fn fastq_path(dir: impl AsRef<Path>) -> PathBuf {
@@ -523,10 +523,10 @@ mod test {
             ..Opts::default()
         };
 
-        let sample_sheet = SampleSheet::from_path(&opts.sample_metadata, &opts).unwrap();
-        let output_types_to_write = opts.output_types_to_write().unwrap();
+        let sample_sheet = SampleSheet::from_path(opts).unwrap();
+        let output_types_to_write = sample_sheet.opts.output_types_to_write().unwrap();
 
-        run(&opts).unwrap();
+        run(sample_sheet.opts).unwrap();
 
         // Check outputs
         for name in sample_sheet.samples.iter().map(|s| &s.sample_id) {
@@ -701,9 +701,9 @@ mod test {
             ..Opts::default()
         };
 
-        let sample_sheet = SampleSheet::from_path(&opts.sample_metadata, &opts).unwrap();
+        let sample_sheet = SampleSheet::from_path(opts).unwrap();
 
-        run(&opts).unwrap();
+        run(sample_sheet.opts).unwrap();
 
         for (i, sample) in sample_sheet.samples.iter().enumerate() {
             let barcodes: Vec<_> = barcodes_per_sample[i].iter().cloned().collect();
@@ -765,7 +765,7 @@ mod test {
             ..Opts::default()
         };
 
-        run(&opts).unwrap();
+        run(opts).unwrap();
 
         let record = &slurp_fastq(output.join("foo_R1.fastq.gz"))[0];
         let header = FastqHeader::try_from(record.head()).unwrap();
@@ -818,7 +818,7 @@ mod test {
             ..Opts::default()
         };
 
-        run(&opts).unwrap();
+        run(opts).unwrap();
     }
 
     #[rstest]
@@ -880,8 +880,8 @@ mod test {
             ..Opts::default()
         };
 
-        let sample_sheet = SampleSheet::from_path(&opts.sample_metadata, &opts).unwrap();
-        run(&opts).unwrap();
+        let sample_sheet = SampleSheet::from_path(opts).unwrap();
+        run(sample_sheet.opts).unwrap();
 
         for (i, sample) in sample_sheet.samples.iter().enumerate() {
             let sample_id = sample.sample_id.clone();
@@ -1006,9 +1006,9 @@ mod test {
             ..Opts::default()
         };
 
-        let sample_sheet = SampleSheet::from_path(&opts.sample_metadata, &opts).unwrap();
+        let sample_sheet = SampleSheet::from_path(opts).unwrap();
 
-        run(&opts).unwrap();
+        run(sample_sheet.opts).unwrap();
 
         // Setup expected
         // Note, if a read is both control and failed quality, it is counted as failed quality
@@ -1120,7 +1120,7 @@ mod test {
         };
 
         // Run the tool and then read back the data for s1
-        run(&opts).unwrap();
+        run(opts).unwrap();
 
         let s1_recs = slurp_fastq(&output_path.join("s1_R1.fastq.gz"));
         let s2_recs = slurp_fastq(&output_path.join("s2_R1.fastq.gz"));
@@ -1165,7 +1165,7 @@ mod test {
 
         // Run the tool and then read back the data for s1
         let undetermined_id = opts.undetermined_sample_name.clone();
-        run(&opts).unwrap();
+        run(opts).unwrap();
 
         let s1_recs = slurp_fastq(&output_path.join("s1_R1.fastq.gz"));
         assert_eq!(s1_recs.len(), 3);
@@ -1239,7 +1239,7 @@ mod test {
             ..Opts::default()
         };
 
-        run(&opts).unwrap();
+        run(opts).unwrap();
 
         // Check the undetermined sample got no reads
         let un_recs = slurp_fastq(&output.join("Undetermined_R1.fastq.gz"));

@@ -6,7 +6,6 @@ use csv::{ReaderBuilder, StringRecord, Trim};
 use fgoxide::io::Io;
 use itertools::Itertools;
 use std::fmt::Display;
-use std::path::Path;
 use thiserror::Error;
 
 /// The optional line number from the [`SampleMetadata`] file where an error ocurred.
@@ -99,7 +98,7 @@ pub enum SampleSheetError {
     #[error("Unable to deserialize line number {line}")]
     DeserializeRecord { source: csv::Error, line: usize },
 
-    #[error("Both 'Sample_Barcode' and '{index_name}' were specified on line nmber {line}.")]
+    #[error("Both 'Sample_Barcode' and '{index_name}' were specified on line number {line}.")]
     BarcodeColumnCollision { index_name: String, line: usize },
 
     #[error(
@@ -125,13 +124,30 @@ pub struct SampleSheet {
 impl SampleSheet {
     /// Builds a `SampleSheet` from the CSV at the given path.
     ///
-    /// The CSV may be a Singular Genomics Sample Sheet, with the optional `[Demux]` section and
-    /// required `[Data]` section, or a simple CSV file with
-    pub fn from_path<P: AsRef<Path>>(path: &P, opts: &Opts) -> Result<Self, SampleSheetError> {
+    /// The CSV may be a Singular Genomics Sample Sheet, with the optional `[Demux]` section first
+    /// and required `[Data]` section next, or a simple CSV file with headers.
+    ///
+    /// # Sample Sheet
+    ///
+    /// The given default command line options are updated using the first to columns in the
+    /// `[Demux]` section.  The keys must specified in the first column and be the long-form of the
+    /// corresponding command line option (e.g. `fastqs` for the command line option `--fastqs`).
+    /// The value(s) must be specified in the second column.  For options that take multiple
+    /// values (e.g. `--read-structures`), the multiple values must be space separated.
+    ///
+    /// The `[Data]` section must have `Sample_Id`, `Index1_Sequence`, and `Index2_Sequence`
+    /// header.  Each subsequent row corresponds to a single sample.
+    ///
+    /// # Arguments
+    /// - `path` - the path to the sample sheet or simple CSV
+    /// - `opts` - the default command line options to update using the `[Demux]` section.  The
+    ///            options are also used to ensure no barcode collisions occur, and to set the
+    ///            undetermined sample name when demultiplexing.
+    pub fn from_path(opts: Opts) -> Result<Self, SampleSheetError> {
         // Read in all the lines so we can check if we have a simple CSV file or a full-fledged
         // Sample Sheet.
         let io = Io::default();
-        let lines = io.read_lines(path)?;
+        let lines = io.read_lines(&opts.sample_metadata).unwrap(); // FIXME: use ?
 
         if lines.is_empty() {
             return Err(SampleSheetError::Empty);
@@ -139,7 +155,8 @@ impl SampleSheet {
 
         // If either [Demux] or [Data] found at the start of the line, assume a full-fledged
         // sample sheet.  Otherwise, fallback to a simple CSV with a header line.
-        let is_sample_sheet: bool = lines.iter().any(|l| l.starts_with("[Demux]") || l.starts_with("[Data]"));
+        let is_sample_sheet: bool =
+            lines.iter().any(|l| l.starts_with("[Demux]") || l.starts_with("[Data]"));
 
         // Use the read in lines again, so we don't have to re-read the input file (could be
         // piped?)
@@ -152,11 +169,17 @@ impl SampleSheet {
         }
     }
 
-    // Reads sample metadata and command line options from a full-fledged Singular Genomics
-    // Sample Sheet.
+    /// Reads sample metadata and command line options from a full-fledged Singular Genomics
+    /// Sample Sheet.
+    ///
+    /// # Arguments
+    /// - `reader` - the reader from which to read the sample sheet
+    /// - `opts` - the default command line options to update using the `[Demux]` section.  The
+    ///            options are also used to ensure no barcode collisions occur, and to set the
+    ///            undetermined sample name when demultiplexing.
     fn from_sample_sheet_reader<R: std::io::Read>(
         reader: R,
-        opts: &Opts,
+        opts: Opts,
     ) -> Result<Self, SampleSheetError> {
         let mut reader = ReaderBuilder::new()
             .delimiter(b',')
@@ -175,11 +198,16 @@ impl SampleSheet {
         SampleSheet::from_sample_sheet_string_records(&records, opts)
     }
 
-    // Reads sample metadata from a simple CSV.  No command line options are able to be specified
-    // in this format; use a sample sheet in that case.
+    /// Reads sample metadata from a simple CSV.  No command line options are able to be specified
+    /// in this format; use a sample sheet in that case.
+    ///
+    /// # Arguments
+    /// - `reader` - the reader from which to read the sample sheet
+    /// - `opts` - the command line options used to ensure no barcode collisions occur, and to set
+    ///            the undetermined sample name when demultiplexing.
     fn from_metadata_csv_reader<R: std::io::Read>(
         reader: R,
-        opts: &Opts,
+        opts: Opts,
     ) -> Result<Self, SampleSheetError> {
         let mut reader =
             csv::ReaderBuilder::new().has_headers(true).delimiter(b',').from_reader(reader);
@@ -200,31 +228,67 @@ impl SampleSheet {
             &opts.undetermined_sample_name,
         )?;
 
-        Ok(SampleSheet { samples, opts: opts.clone() })
+        Ok(SampleSheet { samples, opts })
     }
 
-    // Updates the given command line options with values from the `[Demux]` section.
-    // Starting at the given line index, read in any demultiplexing command line options and
-    // values.  The option names must be the same name as on the command line, with the leading
-    // `--` ommited.  If the value is empty, the command line option is assumed to be a flag.
-    // Command line options with empty values are not supported.  The given opts are updated.
-    fn slurp_demux_opts(
-        records: &[StringRecord],
-        start_line_index: usize,
-        opts: &mut Opts,
-    ) -> Result<usize, SampleSheetError> {
-        let mut line_index = start_line_index;
-        if records.len() == line_index {
-            // no "[Demux]" found
-            return Err(SampleSheetError::NoDemuxHeader);
-        }
-        line_index += 1; // skip over "[Demux]"
-        let mut argv: Vec<String> = vec![TOOL_NAME.to_string()];
-        while line_index < records.len() {
-            let record = &records[line_index];
-            if !record.is_empty() && &record[0] == "[Data]" {
+    /// Finds the start and end line index (0-based exclusive) of the section with the given key
+    /// (e.g.  "[Header]", "[Demux]", "[Data]"), returning `None` if the key wasn't found.  The key
+    /// must occur in the first column.  The end of the section is identified by the first column
+    ///  starting with "[".
+    ///
+    /// Arguments:
+    /// - `records` - the `StringRecord`s, one per line
+    /// - `section_key` - the value of the first column that identifies the start of the section
+    fn find_section(records: &[StringRecord], section_key: &str) -> Option<(usize, usize)> {
+        let mut start_line_index = 0;
+        while start_line_index < records.len() {
+            let record = &records[start_line_index];
+            start_line_index += 1;
+            if !record.is_empty() && &record[0] == section_key {
                 break;
             }
+        }
+        if start_line_index == records.len() {
+            return None;
+        }
+        let mut end_line_index = start_line_index;
+        while end_line_index < records.len() {
+            let record = &records[end_line_index];
+            if record[0].starts_with('[') {
+                break;
+            }
+            end_line_index += 1;
+        }
+        Some((start_line_index, end_line_index - 1))
+    }
+
+    /// Parses the demultiplexing options from given string records and updates the given command
+    /// line options.
+    ///
+    /// The records are one per line.
+    /// Updates the given command line options with values from the `[Demux]` section.
+    /// Starting at the given line index, read in any demultiplexing command line options and
+    /// values.  The option names must be the same name as on the command line, with the leading
+    /// `--` ommited.  If the value is empty, the command line option is assumed to be a flag.
+    /// Command line options with empty values are not supported.  The given opts are updated.
+    ///
+    /// Returns the line index after the last demultiplex option.  The end of the demultiplexing
+    /// options is identified either when no more lines remain, or when the `[Data]` section is
+    /// found.
+    ///
+    /// # Arguments
+    /// - `records` - the full list of `StringRecord`s, one per line
+    /// - `opts` - the default command line options to update using the `[Demux]` section
+    /// - `line_index` - the index of the first line in the demultiplexing section in teh sample sheet
+    fn parse_and_update_demux_options(
+        records: &[StringRecord],
+        mut opts: Opts,
+    ) -> Result<Opts, SampleSheetError> {
+        if records.is_empty() || records.iter().all(csv::StringRecord::is_empty) {
+            return Ok(opts);
+        }
+        let mut argv: Vec<String> = vec![TOOL_NAME.to_string()];
+        for record in records {
             if record.len() >= 2 {
                 // Command line arguments and their values are not checked here to be valid.  This
                 // happens below when we try to build the opts.
@@ -235,16 +299,17 @@ impl SampleSheet {
                 // For boolean options, only the presence of a key and the value is ignored.  Thus,
                 // when an empty value is given, assume the argument is a boolean.
                 if !record[1].is_empty() {
-                    argv.push(record[1].to_string());
+                    for value in record[1].split(' ') {
+                        argv.push(value.to_string());
+                    }
                 }
             }
-            line_index += 1;
         }
 
         // Build the opts given the arguments.  This is where any unknown command line argument
         // will raise an error, and illegal value too.
         match opts.try_update_from(argv.into_iter()) {
-            Ok(()) => Ok(line_index),
+            Ok(()) => Ok(opts),
             Err(err) => {
                 let kind = err.kind.as_str().unwrap_or("Unknown error").to_string();
                 let mut args: Vec<String> = vec![];
@@ -256,68 +321,41 @@ impl SampleSheet {
         }
     }
 
-    /// Reads from a Sample Sheet represented as a vector if `StringRecord`s.  Skips over lines
-    /// optionally until the `[Demux]` section is found, upating the given command line options,
-    /// and then the `[Data]` section, to parse a list of samples.
-    fn from_sample_sheet_string_records(
+    /// Converts the given string records from a sample sheet to samples.  Assumes a header, and
+    /// all rows have the same number of columns.  No validation is performed across samples.
+    fn slurp_samples(
         records: &[StringRecord],
-        opts: &Opts,
-    ) -> Result<Self, SampleSheetError> {
+        mut line_index: usize,
+    ) -> Result<Vec<SampleMetadata>, SampleSheetError> {
         if records.is_empty() {
-            return Err(SampleSheetError::Empty);
+            return Err(SampleSheetError::NoDataHeader);
         }
 
-        let mut line_index = 0;
+        // The header line with column names
+        let header = &records[0];
 
-        // ignore data pre-"[Demux]"
-        while line_index < records.len()
-            && !records[line_index].is_empty()
-            && &records[line_index][0] != "[Demux]"
-        {
-            line_index += 1;
-        }
-
-        // Parse demultiplexing settings
-        let mut opts = opts.clone();
-        let mut line_index = SampleSheet::slurp_demux_opts(records, line_index, &mut opts)?;
-        if records.len() == line_index {
-            // no "[Data]" found
-            return Err(SampleSheetError::NoData);
-        }
-
-        // Parse data
-        line_index += 1; // skip over the "[Data]" line
-        if records.len() == line_index {
-            // no header line in the "[Data]" section
-            return Err(SampleSheetError::NoSamples);
-        }
-        let data_header = &records[line_index];
-        //let data_header: Vec<&str> = records[line_index].into_iter().collect();
-        line_index += 1; // skip over the header
+        // parse the samples
         let mut ordinal = 1;
         let mut samples: Vec<SampleMetadata> = vec![];
-        while line_index < records.len() {
+        for record in &records[1..] {
             // allow an empty line
-            // TODO: allow a line with the correct # of columns but all empty lines
-            if records[line_index].is_empty() {
-                line_index += 1;
+            if record.is_empty() {
                 continue;
             }
             // make sure we have the correct number of columns
-            if data_header.len() != records[line_index].len() {
+            if header.len() != record.len() {
                 return Err(SampleSheetError::SampleInvalidNumberOfColumns {
-                    actual: records[line_index].len(),
-                    expected: data_header.len(),
+                    actual: record.len(),
+                    expected: header.len(),
                     line_number: line_index + 1,
-                    line: records[line_index].into_iter().join(","),
+                    line: record.into_iter().join(","),
                 });
             }
 
             // Build the sample and convert it to SampleMetadata
-            let sample: SampleMetadata =
-                records[line_index].deserialize(Some(data_header)).map_err(|e| {
-                    SampleSheetError::SampleInvalidLine { source: e, line: line_index + 1 }
-                })?;
+            let sample: SampleMetadata = record.deserialize(Some(header)).map_err(|e| {
+                SampleSheetError::SampleInvalidLine { source: e, line: line_index + 1 }
+            })?;
             let sample_metadata: SampleMetadata =
                 sample.update_with_and_set_demux_barcode(ordinal, line_index + 1)?;
             samples.push(sample_metadata);
@@ -325,37 +363,73 @@ impl SampleSheet {
             ordinal += 1;
             line_index += 1;
         }
+        if samples.is_empty() {
+            return Err(SampleSheetError::NoSamples);
+        }
 
+        Ok(samples)
+    }
+
+    /// Reads from a Sample Sheet represented as a vector if `StringRecord`s.  Skips over lines
+    /// optionally until the `[Demux]` section is found, upating the given command line options,
+    /// and then the `[Data]` section, to parse a list of samples.  Validates the samples are
+    /// unique and their barcodes are dissimilar enough.
+    fn from_sample_sheet_string_records(
+        records: &[StringRecord],
+        opts: Opts,
+    ) -> Result<Self, SampleSheetError> {
+        if records.is_empty() {
+            return Err(SampleSheetError::Empty);
+        }
+
+        // Parse demultiplexing settings ([Demux] section)
+        let opts: Opts = {
+            match SampleSheet::find_section(records, "[Demux]") {
+                None => Ok(opts),
+                Some((start, end)) => {
+                    SampleSheet::parse_and_update_demux_options(&records[start..=end], opts)
+                }
+            }?
+        };
+
+        // Parse the sample metadata ([Data] section)
+        let (start, end) = match SampleSheet::find_section(records, "[Data]") {
+            None => return Err(SampleSheetError::NoData),
+            Some(tuple) => tuple,
+        };
+
+        let samples = SampleSheet::slurp_samples(&records[start..=end], start)?;
+
+        // Validate the samples
         let samples = validate_samples(
             samples,
             Some(opts.allowed_mismatches),
             &opts.undetermined_sample_name,
         )?;
 
-        Ok(SampleSheet { opts: opts.clone(), samples })
+        Ok(SampleSheet { opts, samples })
     }
 }
 
 #[cfg(test)]
 mod test {
+    use std::path::PathBuf;
+
     use crate::opts::Opts;
     use crate::sample_sheet::{SampleSheet, SampleSheetError};
+    use bstr::BString;
     use clap::error::ErrorKind::{MissingRequiredArgument, UnknownArgument};
     use csv::StringRecord;
     use itertools::Itertools;
     use matches::assert_matches;
 
     #[test]
-    fn test_empty_sample_sheet() {
-        let records: Vec<StringRecord> = vec![];
-        assert_matches!(
-            SampleSheet::from_sample_sheet_string_records(&records, &Opts::default()),
-            Err(SampleSheetError::Empty)
-        );
+    fn test_find_section_not_found_empty_records() {
+        assert_eq!(SampleSheet::find_section(&[], "[Hello]"), None);
     }
 
     #[test]
-    fn test_unknown_demux_option_flag() {
+    fn test_find_section_not_found() {
         let records: Vec<StringRecord> = vec![
             StringRecord::from(vec!["[Header]"]),
             StringRecord::from(vec!["Date", "Today"]),
@@ -366,8 +440,80 @@ mod test {
             StringRecord::from(vec!["unknown", ""]),
             StringRecord::from(vec!["[Data]"]),
         ];
+        assert_eq!(SampleSheet::find_section(&records, "[Hello]"), None);
+    }
 
-        let result = SampleSheet::from_sample_sheet_string_records(&records, &Opts::default());
+    #[test]
+    fn test_find_section_not_found_empty_section() {
+        let records: Vec<StringRecord> = vec![StringRecord::from(vec!["[Hello]"])];
+        assert_eq!(SampleSheet::find_section(&records, "[Hello]"), None);
+    }
+
+    #[test]
+    fn test_find_section_non_empty_section() {
+        let records: Vec<StringRecord> = vec![
+            StringRecord::from(vec!["[Header]"]),
+            StringRecord::from(vec!["Date", "Today"]),
+            StringRecord::from(vec!["Run Name", "Foo"]),
+            StringRecord::from(vec!["[Demux]"]),
+            StringRecord::from(vec!["read-structures", "8B +T"]),
+            StringRecord::from(vec!["fastqs", "/dev/null"]),
+            StringRecord::from(vec!["unknown", ""]),
+            StringRecord::from(vec!["[Data]"]),
+            StringRecord::from(vec!["unknown", ""]),
+            StringRecord::from(vec!["[End]"]),
+        ];
+        assert_eq!(SampleSheet::find_section(&records, "[Header]"), Some((1, 2)));
+        assert_eq!(SampleSheet::find_section(&records, "[Demux]"), Some((4, 6)));
+        assert_eq!(SampleSheet::find_section(&records, "[Data]"), Some((8, 8)));
+        assert_eq!(SampleSheet::find_section(&records, "[End]"), None);
+    }
+
+    #[test]
+    fn test_demux_missing_fastqs_and_read_structures() {
+        let records: Vec<StringRecord> = vec![StringRecord::from(vec!["unkonwn"])];
+
+        let result = SampleSheet::parse_and_update_demux_options(&records, Opts::default());
+        assert_matches!(result, Err(SampleSheetError::DemuxOptionsParsing { kind: _, args: _ }));
+        if let Err(SampleSheetError::DemuxOptionsParsing { kind, args }) = result {
+            assert_eq!(kind, MissingRequiredArgument.as_str().unwrap());
+            assert_eq!(args, "--fastqs, --read-structures".to_string());
+        }
+    }
+
+    #[test]
+    fn test_demux_missing_fastqs() {
+        let records: Vec<StringRecord> = vec![StringRecord::from(vec!["read-structures", "8B +T"])];
+
+        let result = SampleSheet::parse_and_update_demux_options(&records, Opts::default());
+        assert_matches!(result, Err(SampleSheetError::DemuxOptionsParsing { kind: _, args: _ }));
+        if let Err(SampleSheetError::DemuxOptionsParsing { kind, args }) = result {
+            assert_eq!(kind, MissingRequiredArgument.as_str().unwrap());
+            assert_eq!(args, "--fastqs".to_string());
+        }
+    }
+
+    #[test]
+    fn test_demux_missing_read_structure() {
+        let records: Vec<StringRecord> = vec![StringRecord::from(vec!["fastqs", "/dev/null"])];
+
+        let result = SampleSheet::parse_and_update_demux_options(&records, Opts::default());
+        assert_matches!(result, Err(SampleSheetError::DemuxOptionsParsing { kind: _, args: _ }));
+        if let Err(SampleSheetError::DemuxOptionsParsing { kind, args }) = result {
+            assert_eq!(kind, MissingRequiredArgument.as_str().unwrap());
+            assert_eq!(args, "--read-structures".to_string());
+        }
+    }
+
+    #[test]
+    fn test_unknown_demux_option_flag() {
+        let records: Vec<StringRecord> = vec![
+            StringRecord::from(vec!["read-structures", "8B +T"]),
+            StringRecord::from(vec!["fastqs", "/dev/null"]),
+            StringRecord::from(vec!["unknown", ""]),
+        ];
+
+        let result = SampleSheet::parse_and_update_demux_options(&records, Opts::default());
         assert_matches!(result, Err(SampleSheetError::DemuxOptionsParsing { kind: _, args: _ }));
         if let Err(SampleSheetError::DemuxOptionsParsing { kind, args }) = result {
             assert_eq!(kind, UnknownArgument.as_str().unwrap());
@@ -378,17 +524,12 @@ mod test {
     #[test]
     fn test_unknown_demux_option_with_value() {
         let records: Vec<StringRecord> = vec![
-            StringRecord::from(vec!["[Header]"]),
-            StringRecord::from(vec!["Date", "Today"]),
-            StringRecord::from(vec!["Run Name", "Foo"]),
-            StringRecord::from(vec!["[Demux]"]),
             StringRecord::from(vec!["read-structures", "8B +T"]),
             StringRecord::from(vec!["fastqs", "/dev/null"]),
             StringRecord::from(vec!["unknown", "value"]),
-            StringRecord::from(vec!["[Data]"]),
         ];
 
-        let result = SampleSheet::from_sample_sheet_string_records(&records, &Opts::default());
+        let result = SampleSheet::parse_and_update_demux_options(&records, Opts::default());
         assert_matches!(result, Err(SampleSheetError::DemuxOptionsParsing { kind: _, args: _ }));
         if let Err(SampleSheetError::DemuxOptionsParsing { kind, args }) = result {
             assert_eq!(kind, UnknownArgument.as_str().unwrap());
@@ -397,89 +538,171 @@ mod test {
     }
 
     #[test]
-    fn test_demux_missing_fastqs_and_read_structures() {
+    fn test_parse_and_update_demux_options_ok() {
         let records: Vec<StringRecord> = vec![
-            StringRecord::from(vec!["[Header]"]),
-            StringRecord::from(vec!["Date", "Today"]),
-            StringRecord::from(vec!["Run Name", "Foo"]),
-            StringRecord::from(vec!["[Demux]"]),
-            StringRecord::from(vec!["Bar"]),
-        ];
-
-        let result = SampleSheet::from_sample_sheet_string_records(&records, &Opts::default());
-        assert_matches!(result, Err(SampleSheetError::DemuxOptionsParsing { kind: _, args: _ }));
-        if let Err(SampleSheetError::DemuxOptionsParsing { kind, args }) = result {
-            assert_eq!(kind, MissingRequiredArgument.as_str().unwrap());
-            assert_eq!(args, "--fastqs, --read-structures".to_string());
-        }
-    }
-
-    #[test]
-    fn test_demux_missing_fastqs() {
-        let records: Vec<StringRecord> = vec![
-            StringRecord::from(vec!["[Header]"]),
-            StringRecord::from(vec!["Date", "Today"]),
-            StringRecord::from(vec!["Run Name", "Foo"]),
-            StringRecord::from(vec!["[Demux]"]),
-            StringRecord::from(vec!["read-structures", "8B +T"]),
-        ];
-
-        let result = SampleSheet::from_sample_sheet_string_records(&records, &Opts::default());
-        assert_matches!(result, Err(SampleSheetError::DemuxOptionsParsing { kind: _, args: _ }));
-        if let Err(SampleSheetError::DemuxOptionsParsing { kind, args }) = result {
-            assert_eq!(kind, MissingRequiredArgument.as_str().unwrap());
-            assert_eq!(args, "--fastqs".to_string());
-        }
-    }
-
-    #[test]
-    fn test_demux_missing_read_structure() {
-        let records: Vec<StringRecord> = vec![
-            StringRecord::from(vec!["[Header]"]),
-            StringRecord::from(vec!["Date", "Today"]),
-            StringRecord::from(vec!["Run Name", "Foo"]),
-            StringRecord::from(vec!["[Demux]"]),
-            StringRecord::from(vec!["fastqs", "/dev/null"]),
-        ];
-
-        let result = SampleSheet::from_sample_sheet_string_records(&records, &Opts::default());
-        assert_matches!(result, Err(SampleSheetError::DemuxOptionsParsing { kind: _, args: _ }));
-        if let Err(SampleSheetError::DemuxOptionsParsing { kind, args }) = result {
-            assert_eq!(kind, MissingRequiredArgument.as_str().unwrap());
-            assert_eq!(args, "--read-structures".to_string());
-        }
-    }
-
-    #[test]
-    fn test_no_data() {
-        let records: Vec<StringRecord> = vec![
-            StringRecord::from(vec!["[Header]"]),
-            StringRecord::from(vec!["Date", "Today"]),
-            StringRecord::from(vec!["Run Name", "Foo"]),
-            StringRecord::from(vec!["[Demux]"]),
             StringRecord::from(vec!["read-structures", "8B +T"]),
             StringRecord::from(vec!["fastqs", "/dev/null"]),
+            StringRecord::from(vec!["allowed-mismatches", "123"]),
         ];
+
+        let opts = SampleSheet::parse_and_update_demux_options(&records, Opts::default()).unwrap();
+        assert_eq!(opts.fastqs, vec![PathBuf::from("/dev/null")]);
+        assert_eq!(opts.read_structures.iter().map(|r| format!("{}", r)).join(" "), "8B +T");
+        assert_eq!(opts.allowed_mismatches, 123);
+    }
+
+    #[test]
+    fn test_slurp_samples_no_header() {
+        let result = SampleSheet::slurp_samples(&[], 12);
+        assert_matches!(result, Err(SampleSheetError::NoDataHeader));
+    }
+
+    #[test]
+    fn test_slurp_samples_ok() {
+        let records = vec![
+            StringRecord::from(vec!["Sample_ID", "Index1_Sequence", "Index2_Sequence"]),
+            StringRecord::from(vec!["S1", "AAAA", "CCCC"]),
+            StringRecord::from(vec!["S2", "GGGG", "TTTT"]),
+        ];
+        let samples = SampleSheet::slurp_samples(&records, 12).unwrap();
+        assert_eq!(samples.len(), 2);
+        assert_eq!(samples[0].sample_id, "S1");
+        assert_eq!(samples[0].index1, Some(BString::from("AAAA")));
+        assert_eq!(samples[0].index2, Some(BString::from("CCCC")));
+        assert_eq!(samples[0].ordinal, 1);
+        assert_eq!(samples[1].sample_id, "S2");
+        assert_eq!(samples[1].index1, Some(BString::from("GGGG")));
+        assert_eq!(samples[1].index2, Some(BString::from("TTTT")));
+        assert_eq!(samples[1].ordinal, 2);
+    }
+
+    #[test]
+    fn test_slurp_samples_too_few_lines() {
+        let records = vec![
+            StringRecord::from(vec!["Sample_ID", "Index1_Sequence", "Index2_Sequence"]),
+            StringRecord::from(vec!["S1", "AAAA", "CCCC"]),
+            StringRecord::from(vec!["S2", "TTTT"]),
+            StringRecord::from(vec!["S3", "AGAG", "TCTC"]),
+        ];
+        let result = SampleSheet::slurp_samples(&records, 12);
         assert_matches!(
-            SampleSheet::from_sample_sheet_string_records(&records, &Opts::default()),
-            Err(SampleSheetError::NoData)
+            result,
+            Err(SampleSheetError::SampleInvalidNumberOfColumns {
+                actual: _,
+                expected: _,
+                line_number: _,
+                line: _,
+            })
+        );
+        if let Err(SampleSheetError::SampleInvalidNumberOfColumns {
+            actual,
+            expected,
+            line_number,
+            line,
+        }) = result
+        {
+            assert_eq!(actual, 2);
+            assert_eq!(expected, 3);
+            assert_eq!(line_number, 14);
+            assert_eq!(line, "S2,TTTT");
+        }
+    }
+
+    #[test]
+    fn test_slurp_samples_too_many_lines() {
+        let records = vec![
+            StringRecord::from(vec!["Sample_ID", "Index1_Sequence", "Index2_Sequence"]),
+            StringRecord::from(vec!["S1", "AAAA", "CCCC"]),
+            StringRecord::from(vec!["S2", "GGGG", "TTTT", "ACGT"]),
+            StringRecord::from(vec!["S3", "AGAG", "TCTC"]),
+        ];
+        let result = SampleSheet::slurp_samples(&records, 12);
+        assert_matches!(
+            result,
+            Err(SampleSheetError::SampleInvalidNumberOfColumns {
+                actual: _,
+                expected: _,
+                line_number: _,
+                line: _,
+            })
+        );
+        if let Err(SampleSheetError::SampleInvalidNumberOfColumns {
+            actual,
+            expected,
+            line_number,
+            line,
+        }) = result
+        {
+            assert_eq!(actual, 4);
+            assert_eq!(expected, 3);
+            assert_eq!(line_number, 14);
+            assert_eq!(line, "S2,GGGG,TTTT,ACGT");
+        }
+    }
+
+    #[test]
+    fn test_slurp_samples_deserialize_error() {
+        let records = vec![
+            StringRecord::from(vec!["Sample_ID", "Index1_Sequence", "Index2_Sequence", "Lane"]),
+            StringRecord::from(vec!["S1", "AAAA", "CCCC", "1"]),
+            StringRecord::from(vec!["S2", "GGGG", "TTTT", "ACCT"]),
+        ];
+        let result = SampleSheet::slurp_samples(&records, 12);
+        assert_matches!(result, Err(SampleSheetError::SampleInvalidLine { source: _, line: _ }));
+        if let Err(SampleSheetError::SampleInvalidLine { source: _, line }) = result {
+            assert_eq!(line, 14);
+        }
+    }
+
+    #[test]
+    fn test_slurp_samples_both_sample_barcode_and_index_sequences() {
+        let records = vec![
+            StringRecord::from(vec![
+                "Sample_ID",
+                "Index1_Sequence",
+                "Index2_Sequence",
+                "Sample_Barcode",
+            ]),
+            StringRecord::from(vec!["S1", "AAAA", "CCCC", "AAAACCCC"]),
+            StringRecord::from(vec!["S2", "GGGG", "TTTT", "GGGGTTTT"]),
+            StringRecord::from(vec!["S3", "AGAG", "TCTC", "AGAGTCTC"]),
+        ];
+        let result = SampleSheet::slurp_samples(&records, 12);
+        assert_matches!(
+            result,
+            Err(SampleSheetError::BarcodeColumnCollision { index_name: _, line: _ })
+        );
+        if let Err(SampleSheetError::BarcodeColumnCollision { index_name, line }) = result {
+            assert_eq!(index_name, "Index1_Sequence and Index2_Sequence");
+            assert_eq!(line, 13);
+        }
+    }
+
+    // TODO:
+    // - tests for from_sample_sheet_string_records
+    //   - empty sample sheet
+    //   - no Data section
+    //   - ok sample sheet (csv, sample sheet, no demux)
+
+    #[test]
+    fn test_sample_sheet_empty() {
+        let records: Vec<StringRecord> = vec![];
+        assert_matches!(
+            SampleSheet::from_sample_sheet_string_records(&records, Opts::default()),
+            Err(SampleSheetError::Empty)
         );
     }
 
     #[test]
-    fn test_no_samples() {
+    fn test_sample_sheet_no_data() {
         let records: Vec<StringRecord> = vec![
             StringRecord::from(vec!["[Header]"]),
             StringRecord::from(vec!["Date", "Today"]),
             StringRecord::from(vec!["Run Name", "Foo"]),
-            StringRecord::from(vec!["[Demux]"]),
-            StringRecord::from(vec!["read-structures", "8B +T"]),
-            StringRecord::from(vec!["fastqs", "/dev/null"]),
-            StringRecord::from(vec!["[Data]"]),
         ];
         assert_matches!(
-            SampleSheet::from_sample_sheet_string_records(&records, &Opts::default()),
-            Err(SampleSheetError::NoSamples)
+            SampleSheet::from_sample_sheet_string_records(&records, Opts::default()),
+            Err(SampleSheetError::NoData)
         );
     }
 
@@ -502,8 +725,9 @@ mod test {
         let dir = tempfile::tempdir().unwrap();
         let output = dir.as_ref().join("sample_metadata.csv");
         std::fs::write(&output, file_contents).expect("Failed to write sample metadata to file.");
+        let opts = Opts { sample_metadata: output, ..Opts::default() };
 
-        let sample_sheet = SampleSheet::from_path(&output, &Opts::default()).unwrap();
+        let sample_sheet = SampleSheet::from_path(opts).unwrap();
 
         // read structure
         assert_eq!(
@@ -531,8 +755,9 @@ mod test {
         let dir = tempfile::tempdir().unwrap();
         let output = dir.as_ref().join("sample_metadata.csv");
         std::fs::write(&output, file_contents).expect("Failed to write sample metadata to file.");
+        let opts = Opts { sample_metadata: output, ..Opts::default() };
 
-        let sample_sheet = SampleSheet::from_path(&output, &Opts::default()).unwrap();
+        let sample_sheet = SampleSheet::from_path(opts).unwrap();
 
         // samples (one extra for the undetermined)
         assert_eq!(sample_sheet.samples.len(), 4);
@@ -555,8 +780,9 @@ mod test {
         let dir = tempfile::tempdir().unwrap();
         let output = dir.as_ref().join("sample_metadata.csv");
         std::fs::write(&output, file_contents).expect("Failed to write sample metadata to file.");
+        let opts = Opts { sample_metadata: output, ..Opts::default() };
 
-        let sample_sheet = SampleSheet::from_path(&output, &Opts::default()).unwrap();
+        let sample_sheet = SampleSheet::from_path(opts).unwrap();
 
         // read structure
         assert_eq!(

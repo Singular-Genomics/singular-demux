@@ -228,8 +228,8 @@ pub mod test_commons {
     pub fn create_preset_sample_metadata() -> Vec<SampleMetadata> {
         let dir = tempdir().unwrap();
         let file = create_preset_sample_metadata_file(dir.path());
-        let opts = Opts::default();
-        SampleSheet::from_path(&file, &opts).unwrap().samples
+        let opts = Opts { sample_metadata: file, ..Opts::default() };
+        SampleSheet::from_path(opts).unwrap().samples
     }
 
     /// Configuration struct for creating a FASTQ read
