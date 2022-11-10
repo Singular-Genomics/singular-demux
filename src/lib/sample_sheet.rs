@@ -4,7 +4,6 @@ use crate::sample_metadata::{validate_samples, SampleMetadata};
 use clap::Parser;
 use csv::{ReaderBuilder, StringRecord, Trim};
 use fgoxide::io::Io;
-use fgoxide::FgError;
 use itertools::Itertools;
 use std::fmt::Display;
 use thiserror::Error;
