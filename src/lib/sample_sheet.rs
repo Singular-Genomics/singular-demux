@@ -238,7 +238,7 @@ impl SampleSheet {
     ///
     /// Arguments:
     /// - `records` - the `StringRecord`s, one per line
-    /// - `section_key` - the value of the first column that identifies the start of the section
+    /// - `section_key` - the value of the first column that identifies the start of the section, e.g. "[Data]"
     fn find_section(records: &[StringRecord], section_key: &str) -> Option<(usize, usize)> {
         let mut start_line_index = 0;
         while start_line_index < records.len() {
@@ -279,7 +279,7 @@ impl SampleSheet {
     /// # Arguments
     /// - `records` - the full list of `StringRecord`s, one per line
     /// - `opts` - the default command line options to update using the `[Demux]` section
-    /// - `line_index` - the index of the first line in the demultiplexing section in teh sample sheet
+    /// - `line_index` - the index of the first line in the demultiplexing section in the sample sheet
     fn parse_and_update_demux_options(
         records: &[StringRecord],
         mut opts: Opts,
