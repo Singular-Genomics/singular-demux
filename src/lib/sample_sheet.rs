@@ -231,10 +231,10 @@ impl SampleSheet {
         Ok(SampleSheet { samples, opts })
     }
 
-    /// Finds the start and end line index (0-based exclusive) of the section with the given key
+    /// Finds the start and end line index (0-based inclusive) of the section with the given key
     /// (e.g.  "[Header]", "[Demux]", "[Data]"), returning `None` if the key wasn't found.  The key
     /// must occur in the first column.  The end of the section is identified by the first column
-    ///  starting with "[".
+    ///  starting with "[".  The line with the header key is not returned.
     ///
     /// Arguments:
     /// - `records` - the `StringRecord`s, one per line
