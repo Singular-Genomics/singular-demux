@@ -171,7 +171,17 @@ The sample metadata file may be a Sample Sheet or a simple two-column CSV file w
 ####### Sample Sheet
 
 The Sample Sheet may haave a `[Demux]` section for command line options, and must have a `[Data]`
-section for sample information.  The `Sample_ID` column must contain a unique, non-empty identifier
+section for sample information.  
+
+The `[Demux]` section must contain a line per command line option.
+The first column must contain the option long name _without_ the leading `--` (e.g. `fastqs` or 
+`read-structures`).
+The second column contains the option value, or empty if the option takes no value (i.e. a flag).
+If the option accepts multiple values, they must be space separated in the second column.
+The command line options specified in the sample sheet override those provided on the command line.
+
+The `[Data]` section must contain a header line.
+The `Sample_ID` column must contain a unique, non-empty identifier
 for each sample.  One or both of `Index1_Sequence` and `Index2_Sequence` must be present with values for
 indexed runs.  For non-indexed runs, a single sample must be given with an empty value for both the 
 `Index1_Sequence` and `Index2_Sequence` columns.
@@ -180,6 +190,10 @@ Both `Sample_ID`s and the `Index1_Sequence`/`Index2_Sequence` combinations must 
 An example follows:
 
 ```text
+[Demux]
+fastqs,/path/to/i1.fq.gz /path/to/r1.fq.gz
+read-structures,+B +T
+[Data]
 Sample_ID,Index1_Sequence,Index2_Sequence
 s1,ACTGGTCA,
 s2,ATACGAAC,
