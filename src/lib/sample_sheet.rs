@@ -4,6 +4,7 @@ use crate::sample_metadata::{validate_samples, SampleMetadata};
 use clap::Parser;
 use csv::{ReaderBuilder, StringRecord, Trim};
 use fgoxide::io::Io;
+use fgoxide::FgError;
 use itertools::Itertools;
 use std::fmt::Display;
 use thiserror::Error;
@@ -43,6 +44,9 @@ impl Display for ReasonBarcodeInvalid {
 pub enum SampleSheetError {
     #[error("Io error occurred")]
     Io(#[from] std::io::Error),
+
+    #[error("Io error occurred")]
+    FgError(#[from] fgoxide::FgError),
 
     #[error("The sample sheet was empty")]
     Empty,
@@ -147,7 +151,7 @@ impl SampleSheet {
         // Read in all the lines so we can check if we have a simple CSV file or a full-fledged
         // Sample Sheet.
         let io = Io::default();
-        let lines = io.read_lines(&opts.sample_metadata).unwrap(); // FIXME: use ?
+        let lines = io.read_lines(&opts.sample_metadata).map_err(SampleSheetError::FgError)?;
 
         if lines.is_empty() {
             return Err(SampleSheetError::Empty);
@@ -311,7 +315,11 @@ impl SampleSheet {
         match opts.try_update_from(argv.into_iter()) {
             Ok(()) => Ok(opts),
             Err(err) => {
-                let kind = err.kind.as_str().unwrap_or("Unknown error").to_string();
+                let kind = err
+                    .kind
+                    .as_str()
+                    .unwrap_or(&format!("Bug: unknown kind: {:?}", err.kind))
+                    .to_string();
                 let mut args: Vec<String> = vec![];
                 for string in err.info {
                     args.push(string.split(' ').next().unwrap_or(&string).to_string());
