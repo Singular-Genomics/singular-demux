@@ -53,8 +53,7 @@ Performs sample demultiplexing on block-compressed (BGZF) FASTQs.
 Input FASTQs must be block compressed (e.g. with `bgzip`).  A single bgzipped FASTQ file
 should be provided per instrument read.  One read structure should be provided per input FASTQ.
 
-The output directory specified with --output must exist.  Per-sample files with suffixes like
-_R1.fastq.gz will be written to the output directory.
+Per-sample files with suffixes like _R1.fastq.gz will be written to the output directory specified with --output.
 
 The sample metadata file may be a Sample Sheet or a simple two-column CSV file with headers.
 The Sample Sheet may haave a `[Demux]` section for command line options, and must have a `[Data]`
@@ -91,7 +90,7 @@ pub struct Opts {
     #[clap(long, short = 'r', display_order = 3, required = true, multiple_values = true)]
     pub read_structures: Vec<ReadStructure>,
 
-    /// The directory to write outputs, the directory must exist.
+    /// The directory to write outputs.
     ///
     /// This tool will overwrite existing files.
     #[clap(long, short, display_order = 4)]
