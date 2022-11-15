@@ -87,7 +87,6 @@ pub fn run(opts: Opts) -> Result<(), anyhow::Error> {
     // If there is a read structure that's all sample barcode, we need to replace it with the
     // expected length to enable index hopping metrics.  Do so by inspecting the first read in the
     // corresponding FASTQ
-    // TODO: move to it's own method to test
     let opts = opts.with_fixed_sample_barcodes()?;
 
     // All sample barcode read segments should now have a fixed length, so check the sum of their
