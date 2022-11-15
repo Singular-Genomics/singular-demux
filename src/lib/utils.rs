@@ -88,7 +88,6 @@ pub fn filenames<P: AsRef<Path>>(
         Some(project) => output_dir.as_ref().join(project.to_string()),
         None => output_dir.as_ref().to_path_buf(),
     };
-    std::fs::create_dir_all(&output_dir).unwrap();
 
     for structure in read_structures.iter() {
         for kind in structure.iter().map(|segment| segment.kind).sorted().dedup() {
@@ -374,7 +373,6 @@ mod test {
         vec::IntoIter,
     };
 
-    use bstr::BString;
     use gzp::{BgzfSyncWriter, Compression, MgzipSyncWriter};
     use read_structure::{ReadStructure, SegmentType};
 
@@ -425,7 +423,7 @@ mod test {
         .unwrap();
 
         // Sample with project
-        sample.project = Some(BString::from("Project1"));
+        sample.project = Some(String::from("Project1"));
         let output_fastqs =
             filenames(&sample, output_dir, &read_structures, &output_types_to_write);
         let expected = vec![

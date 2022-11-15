@@ -43,7 +43,7 @@ pub struct SampleMetadata {
 
     /// The project associated with this the sample
     #[serde(alias = "Project", rename(serialize = "Project"))]
-    pub project: Option<BString>,
+    pub project: Option<String>,
 
     /// The sanitized `raw_barcode` used for demultiplexing.
     #[serde(skip)]
