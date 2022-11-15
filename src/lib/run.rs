@@ -90,6 +90,14 @@ pub fn run(opts: Opts) -> Result<(), anyhow::Error> {
                 filenames(s, &opts.output_dir, &opts.read_structures, &output_types_to_write)
                     .into_iter()
                     .map(|name| {
+                        // Create the output directory. This is important if the output is being written
+                        // to a project-specific directory
+                        if let Some(parent) = name.parent() {
+                            std::fs::create_dir_all(parent).with_context(|| {
+                                format!("Could not create output directory: {:?}", parent)
+                            })?;
+                        }
+                        // Now create the output file
                         File::create(&name)
                             .with_context(|| {
                                 format!("Unable to create file: {}", name.to_string_lossy())

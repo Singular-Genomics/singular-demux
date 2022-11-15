@@ -75,6 +75,7 @@ pub fn filename(sample: &SampleMetadata, kind: &SegmentType, type_number: u32) -
 }
 
 /// Determine the output filenames for sample given the [`SampleMetadata`] and the [`ReadStructure`].
+/// If the sample has an associated project, the FASTQs will be written in project sub-directories.
 pub fn filenames<P: AsRef<Path>>(
     sample: &SampleMetadata,
     output_dir: P,
@@ -83,12 +84,16 @@ pub fn filenames<P: AsRef<Path>>(
 ) -> Vec<PathBuf> {
     let mut output_paths = vec![];
     let mut counter = AHashMap::new();
+    let output_dir = match &sample.project {
+        Some(project) => output_dir.as_ref().join(project.to_string()),
+        None => output_dir.as_ref().to_path_buf(),
+    };
 
     for structure in read_structures.iter() {
         for kind in structure.iter().map(|segment| segment.kind).sorted().dedup() {
             if output_types_to_write.contains(&kind) {
                 let type_number = counter.entry(kind).or_insert(1);
-                output_paths.push(output_dir.as_ref().join(filename(sample, &kind, *type_number)));
+                output_paths.push(output_dir.join(filename(sample, &kind, *type_number)));
                 *type_number += 1;
             }
         }
@@ -399,6 +404,45 @@ mod test {
             PathBuf::from("/tmp").join(filename(&sample, &SegmentType::SampleBarcode, 1)),
         ];
         assert_eq!(filenames, expected);
+    }
+
+    #[test]
+    fn test_filenames_with_project() {
+        let output_dir = "/tmp";
+        let read_structures: Vec<ReadStructure> = vec!["+T", "+T", "10M", "10B", "10S"]
+            .into_iter()
+            .map(|s| ReadStructure::from_str(s).unwrap())
+            .collect();
+        let output_types_to_write = vec![SegmentType::Template, SegmentType::SampleBarcode];
+        let mut sample = SampleMetadata::new(
+            String::from("Sample1"),
+            "ACTGACTG".as_bytes().to_vec().into(),
+            1,
+            2,
+        )
+        .unwrap();
+
+        // Sample with project
+        sample.project = Some(String::from("Project1"));
+        let output_fastqs =
+            filenames(&sample, output_dir, &read_structures, &output_types_to_write);
+        let expected = vec![
+            PathBuf::from("/tmp/Project1/Sample1_S2_L001_R1_001.fastq.gz"),
+            PathBuf::from("/tmp/Project1/Sample1_S2_L001_R2_001.fastq.gz"),
+            PathBuf::from("/tmp/Project1/Sample1_S2_L001_I1_001.fastq.gz"),
+        ];
+        assert_eq!(output_fastqs, expected);
+
+        // Sample without project
+        sample.project = None;
+        let output_fastqs =
+            filenames(&sample, output_dir, &read_structures, &output_types_to_write);
+        let expected = vec![
+            PathBuf::from("/tmp/Sample1_S2_L001_R1_001.fastq.gz"),
+            PathBuf::from("/tmp/Sample1_S2_L001_R2_001.fastq.gz"),
+            PathBuf::from("/tmp/Sample1_S2_L001_I1_001.fastq.gz"),
+        ];
+        assert_eq!(output_fastqs, expected);
     }
 
     #[test]
