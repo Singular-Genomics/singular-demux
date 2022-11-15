@@ -205,6 +205,9 @@ lazy_static! {
     static ref INPUT_FASTQ_REGEX: Regex = Regex::new(r"^(.*)_L00(\d{1})_([RIUS])(\d{1})_001.fastq.gz$").unwrap();
 }
 
+/// Contains information about a FASTQ that has been inferred from the file name.  This includes
+/// lane, segment type (e.g. template/read, sample barcode/index, molecular barcode/index, and
+/// skip bases), and segment number (e.g. R1 or R2).
 #[derive(Debug, Clone)]
 pub struct InputFastq {
     pub path: PathBuf,
@@ -215,6 +218,8 @@ pub struct InputFastq {
 }
 
 impl InputFastq {
+    /// Create a new `InputFastq` inferring information from the file name.  This must match the
+    /// `INPUT_FASTQ_REGEX` pattern.
     pub fn new<P: AsRef<Path>>(path: P) -> Option<InputFastq> {
         let file_name = path.as_ref().file_name().unwrap().to_string_lossy();
         match INPUT_FASTQ_REGEX.captures(&file_name) {
@@ -242,6 +247,9 @@ impl InputFastq {
         }
     }
 
+    /// Identifies all FASTQs that share the common path prefix and match the
+    /// `INPUT_FASTQ_REGEX` pattern.  The path prefix may also be a directory.  The FASTQS are
+    /// returned in sorted order.
     pub fn slurp<P: AsRef<Path>>(path_prefix: P) -> Vec<InputFastq> {
         let (parent, prefix) = if path_prefix.as_ref().is_file() {
             (
@@ -272,7 +280,10 @@ impl InputFastq {
     }
 }
 
-/// Returns a numeric value in priority order for segment types, to aid in ordering input FASTQs
+/// Returns a numeric value in priority order for segment types, to aid in ordering input FASTQs.
+///
+/// The main motivation is so when the FASTQs are ordered, that for a dual-index run the FASTQs are
+/// ordered assuming a read structure of `+B +T +T +B`.
 fn kind_to_order_num(kind: SegmentType) -> usize {
     match kind {
         SegmentType::SampleBarcode => 0,
@@ -291,6 +302,11 @@ impl Ord for InputFastq {
     /// 4. The kind.  If the kind number is odd, orders by sample barcode, skip, molecular barcode,
     ///    then template.  The opposite order if the kind is even.  This is so if the four FASTQS
     ///    for I1, R1, R2, I2, they are remain in that order after sorting.
+    ///
+    /// The main motivation is so when the FASTQs are ordered, that for a dual-index run the FASTQs are
+    /// ordered assuming a read structure of `+B +T +T +B`.
+    ///
+    /// Read numbers beyond two are supported, but are non-sensical at this time.
     fn cmp(&self, other: &Self) -> Ordering {
         // Prefix
         let mut res = self.prefix.cmp(&other.prefix);

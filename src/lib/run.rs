@@ -477,6 +477,7 @@ mod test {
         run(opts).unwrap();
     }
 
+    /// Returns the character to use in the FASTQ file name for the given `SegmentType`.
     fn kind_to_char(kind: SegmentType) -> char {
         match kind {
             SegmentType::SampleBarcode => 'I',
@@ -487,6 +488,8 @@ mod test {
         }
     }
 
+    /// Creates the properly formatted FASZTQ file name to allow auto-detecting lane, kind, and
+    /// kind number from the file name.
     fn fastq_file_name(prefix: &str, lane: usize, kind: SegmentType, kind_number: usize) -> String {
         format!(
             "{}_L00{}_{}{}{}",
