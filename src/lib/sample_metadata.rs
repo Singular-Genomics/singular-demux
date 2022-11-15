@@ -41,6 +41,10 @@ pub struct SampleMetadata {
     #[serde(alias = "Index2_Sequence", rename(serialize = "Index2_Sequence"))]
     pub index2: Option<BString>,
 
+    /// The project associated with this the sample
+    #[serde(alias = "Project", rename(serialize = "Project"))]
+    pub project: Option<BString>,
+
     /// The sanitized `raw_barcode` used for demultiplexing.
     #[serde(skip)]
     pub barcode: BString,
@@ -73,6 +77,7 @@ impl SampleMetadata {
             index1: None,
             index2: None,
             lane: None,
+            project: None,
             barcode: fixed,
             ordinal: number,
             line_number: Some(line_number),
@@ -98,6 +103,7 @@ impl SampleMetadata {
             index1: None,
             index2: None,
             lane: None,
+            project: None,
             barcode,
             ordinal: number,
             line_number: None,
