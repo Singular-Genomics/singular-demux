@@ -334,7 +334,7 @@ impl PartialEq for InputFastq {
 
 impl Eq for InputFastq {}
 
-// TODO: doc and test
+/// Infers the read length contained in the given FASTQ by examining the length of the first read.
 pub fn infer_fastq_sequence_length(file: PathBuf) -> Result<usize, anyhow::Error> {
     let reader = BufReader::with_capacity(
         BUFSIZE,
@@ -552,7 +552,7 @@ mod test {
 
     use crate::utils::{kind_to_order_num, segment_kind_to_fastq_id, INPUT_FASTQ_SUFFIX};
 
-    use super::{check_bgzf, filenames, InputFastq, MultiZip};
+    use super::{check_bgzf, filenames, infer_fastq_sequence_length, InputFastq, MultiZip};
     use tempfile::tempdir;
 
     #[test]
@@ -841,5 +841,22 @@ mod test {
         assert_eq!(kind_to_order_num(SegmentType::Skip), 1);
         assert_eq!(kind_to_order_num(SegmentType::MolecularBarcode), 2);
         assert_eq!(kind_to_order_num(SegmentType::Template), 3);
+    }
+
+    #[test]
+    fn test_infer_fastq_sequence_length() {
+        let dir = tempdir().unwrap();
+
+        // Create output file
+        let file = dir.path().join("fastq.gz");
+        let writer = BufWriter::new(File::create(&file).unwrap());
+        let mut gz_writer = BgzfSyncWriter::new(writer, Compression::new(3));
+        gz_writer.write_all(b"@NAME\nGATTACA\n+\nIIIIIII\n").unwrap();
+        gz_writer.write_all(b"@NAME\nGATTACAA\n+\nIIIIIIII\n").unwrap();
+        gz_writer.flush().unwrap();
+        drop(gz_writer);
+
+        // infers from the first read if only one read
+        assert_eq!(infer_fastq_sequence_length(file).unwrap(), 7);
     }
 }

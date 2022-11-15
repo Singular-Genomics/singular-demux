@@ -250,34 +250,55 @@ impl Opts {
         Ok(output_types_to_write)
     }
 
-    // TODO: docs and tests
-    pub fn convert_to_fixed_sample_barcodes(self) -> Result<Self> {
-        if self.read_structures.iter().all(|s| s.sample_barcodes().all(|b| b.has_length())) {
+    /// Builds a new copy of this `Opt` where read structures with variable length sample barcodes
+    /// are replaced with fixed length sample barcodes.  The fixed length of each sample barcode
+    /// is inferred from the FASTQ corresponding to the given read structure by examining the
+    /// length of the first read, then removing any other fixed length segments, with the remaining
+    /// length used as the fixed sample barcode length.
+    ///
+    /// If there is no read structure with a variable length sample barcode, the `Opt` itself is
+    /// returned.
+    pub fn with_fixed_sample_barcodes(self) -> Result<Self> {
+        if self
+            .read_structures
+            .iter()
+            .all(|s| s.sample_barcodes().all(read_structure::ReadSegment::has_length))
+        {
             Ok(self)
         } else {
+            // Go through each read structure and try to infer the length of any variable length
+            // sample barcode
             let mut read_structures: Vec<ReadStructure> = vec![];
             for (read_structure, fastq) in self.read_structures.iter().zip(self.fastqs.iter()) {
                 if read_structure
                     .iter()
                     .all(|s| s.kind != SegmentType::SampleBarcode || s.has_length())
                 {
+                    // No variable length, so just clone the current read structure
                     read_structures.push(read_structure.clone());
                 } else {
-                    let read_length: usize = infer_fastq_sequence_length(fastq.to_path_buf())?;
+                    // Get the read length from the FASTQ, subtract all non variable length
+                    // segments (must be a sample barcode if we've gone this far).
+                    let read_length: usize = infer_fastq_sequence_length(fastq.clone())?;
                     let fixed_length: usize =
                         read_structure.iter().map(|s| s.length().unwrap_or(0)).sum();
+
                     let read_segments: Vec<ReadSegment> = read_structure
                         .iter()
-                        .map(|s| {
+                        .filter_map(|s| {
                             if s.has_length() {
-                                *s
+                                Some(*s)
+                            } else if fixed_length == read_length {
+                                None
                             } else {
-                                ReadSegment::from_str(&format!(
-                                    "{}{}",
-                                    read_length - fixed_length,
-                                    s.kind.value()
-                                ))
-                                .unwrap()
+                                Some(
+                                    ReadSegment::from_str(&format!(
+                                        "{}{}",
+                                        read_length - fixed_length,
+                                        s.kind.value()
+                                    ))
+                                    .unwrap(),
+                                )
                             }
                         })
                         .collect();
@@ -331,4 +352,99 @@ pub fn setup() -> Opts {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
     Opts::parse()
+}
+
+#[cfg(test)]
+mod test {
+    use std::{
+        fs::File,
+        io::{BufWriter, Write},
+        path::PathBuf,
+        str::FromStr,
+    };
+
+    use gzp::{BgzfSyncWriter, Compression};
+    use read_structure::ReadStructure;
+    use tempfile::tempdir;
+
+    use super::Opts;
+
+    struct FastqDef {
+        read_structure: ReadStructure,
+        fastq: PathBuf,
+        read_length: usize,
+        expected: ReadStructure,
+    }
+
+    #[test]
+    fn test_with_fixed_sample_barcodes() {
+        let dir = tempdir().unwrap();
+
+        let fastq_defs = vec![
+            // no change: no sample barcode, template is variable length
+            FastqDef {
+                read_structure: ReadStructure::from_str("+T").unwrap(),
+                fastq: dir.path().join("1.fastq.gz"),
+                read_length: 150,
+                expected: ReadStructure::from_str("+T").unwrap(),
+            },
+            // no change: no sample barcode, fixed molecluar barcode, template is variable length
+            FastqDef {
+                read_structure: ReadStructure::from_str("24M+T").unwrap(),
+                fastq: dir.path().join("3.fastq.gz"),
+                read_length: 150,
+                expected: ReadStructure::from_str("24M+T").unwrap(),
+            },
+            // no change: fixed sample barcode length
+            FastqDef {
+                read_structure: ReadStructure::from_str("+B").unwrap(),
+                fastq: dir.path().join("2.fastq.gz"),
+                read_length: 20,
+                expected: ReadStructure::from_str("20B").unwrap(),
+            },
+            // updated: one fixed length and one variable length sample barcode
+            FastqDef {
+                read_structure: ReadStructure::from_str("8B10S+B").unwrap(),
+                fastq: dir.path().join("4.fastq.gz"),
+                read_length: 30,
+                expected: ReadStructure::from_str("8B10S12B").unwrap(),
+            },
+            // updated: read length is short enough that variable length sample barcode is removed
+            FastqDef {
+                read_structure: ReadStructure::from_str("8B10S+B").unwrap(),
+                fastq: dir.path().join("5.fastq.gz"),
+                read_length: 18,
+                expected: ReadStructure::from_str("8B10S").unwrap(),
+            },
+        ];
+
+        // Create output FASTQ files
+        for fastq_def in &fastq_defs {
+            let writer = BufWriter::new(File::create(&fastq_def.fastq).unwrap());
+            let mut gz_writer = BgzfSyncWriter::new(writer, Compression::new(3));
+            let bases = String::from_utf8(vec![b'A'; fastq_def.read_length]).unwrap();
+            let quals = String::from_utf8(vec![b'I'; fastq_def.read_length]).unwrap();
+            let data = format!("@NAME\n{}\n+\n{}\n", bases, quals);
+            gz_writer.write_all(data.as_bytes()).unwrap();
+            gz_writer.flush().unwrap();
+            drop(gz_writer);
+        }
+
+        // Create the opt, and update it
+        let opt = Opts {
+            read_structures: fastq_defs.iter().map(|f| f.read_structure.clone()).collect(),
+            fastqs: fastq_defs.iter().map(|f| f.fastq.clone()).collect(),
+            ..Opts::default()
+        }
+        .with_fixed_sample_barcodes()
+        .unwrap();
+
+        // Check the new read structures
+        let expected_read_structures: Vec<ReadStructure> =
+            fastq_defs.iter().map(|f| f.expected.clone()).collect();
+        assert_eq!(opt.read_structures.len(), expected_read_structures.len());
+        for (actual, expected) in opt.read_structures.iter().zip(expected_read_structures.iter()) {
+            assert_eq!(actual.to_string(), expected.to_string());
+        }
+    }
 }
