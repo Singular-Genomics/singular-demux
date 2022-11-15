@@ -340,7 +340,7 @@ mod test {
     };
 
     fn create_sample(barcode: BString) -> SampleMetadata {
-        SampleMetadata::new(String::from("Sample"), barcode, 0).unwrap()
+        SampleMetadata::new(String::from("Sample"), barcode, 0, 2).unwrap()
     }
 
     #[ignore]

@@ -198,7 +198,7 @@ pub mod test_commons {
         path::{Path, PathBuf},
     };
 
-    use crate::{matcher::UNDETERMINED_NAME, sample_metadata};
+    use crate::{opts::Opts, sample_metadata, sample_sheet::SampleSheet};
     use bgzf::CompressionLevel;
     use sample_metadata::SampleMetadata;
     use seq_io::{
@@ -235,7 +235,8 @@ pub mod test_commons {
     pub fn create_preset_sample_metadata() -> Vec<SampleMetadata> {
         let dir = tempdir().unwrap();
         let file = create_preset_sample_metadata_file(dir.path());
-        sample_metadata::from_path(&file, None, UNDETERMINED_NAME).unwrap()
+        let opts = Opts { sample_metadata: file, ..Opts::default() };
+        SampleSheet::from_path(opts).unwrap().samples
     }
 
     /// Configuration struct for creating a FASTQ read
@@ -377,9 +378,13 @@ mod test {
 
     #[test]
     fn test_filenames_simple() {
-        let sample =
-            SampleMetadata::new(String::from("Sample1"), "ACTGACTG".as_bytes().to_vec().into(), 1)
-                .unwrap();
+        let sample = SampleMetadata::new(
+            String::from("Sample1"),
+            "ACTGACTG".as_bytes().to_vec().into(),
+            1,
+            2,
+        )
+        .unwrap();
         let output_dir = "/tmp";
         let read_structures: Vec<ReadStructure> = vec!["+T", "+T", "10M", "10B", "10S"]
             .into_iter()

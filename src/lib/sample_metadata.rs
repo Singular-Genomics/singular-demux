@@ -1,120 +1,56 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::must_use_candidate)]
-//! [`SampleMetadata`] is a small utility for parsing simplified sample sheets of the following format:
-//!
-//! * **Column Header**: Sample_Barcode
-//!     * **Description**: The sample barcode sequence. <br>
-//!                    If the sample barcode is present across multiple reads (ex. dual-index, or inline in both reads of a pair),
-//!                    then the expected barcode bases from each read should be concatenated in the same order as the order of the reads' FASTQs and read structures given to this tool.
-//!                    Non-ACGT characters will be removed.
-//!     * **Required**: True
-//! * **Column Header**: Sample_ID
-//!     * **Description**: The unique identifier for the sample
-//!     * **Required**: True
 
-use std::{collections::HashSet, fmt::Display, path::Path};
+use std::{collections::HashSet, path::Path};
 
 use bstr::{BStr, BString};
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
+
+use crate::sample_sheet::{ErrorLine, ReasonBarcodeInvalid, SampleSheetError};
 
 /// The bases that are allowed in the [`SampleMetadata::barcode`].
 const ALLOWED_BASES: &[u8] = &[b'A', b'C', b'T', b'G'];
 
-/// The optional line number from the [`SampleMetadata`] file where an error ocurred.
-#[derive(Debug)]
-pub struct ErrorLine(Option<usize>);
-
-impl Display for ErrorLine {
-    /// Writes the line number if present, nothing if it is not None.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.0 {
-            Some(number) => write!(f, "Line {}", number),
-            None => Ok(()),
-        }
-    }
-}
-
-/// The reason that a barcode has been deemed invalid.
-#[derive(Debug)]
-#[non_exhaustive]
-pub enum ReasonBarcodeInvalid {
-    EmptyString,
-}
-
-impl Display for ReasonBarcodeInvalid {
-    /// Proper error wording for each reason a barcode is invalid.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::EmptyString => write!(f, "Barcode is an empty string"),
-        }
-    }
-}
-
-/// The error that may occur when parsing the [`SampleMetadata`].
-#[derive(Error, Debug)]
-pub enum SampleMetadataError {
-    #[error(
-        "{sample_a}:{barcode_a} and {sample_b}:{barcode_b} barcodes are within {distance} hamming distance."
-    )]
-    BarcodeCollision {
-        sample_a: String,
-        barcode_a: String,
-        sample_b: String,
-        barcode_b: String,
-        distance: usize,
-    },
-
-    #[error("Duplicate Sample_ID found: {id}")]
-    DuplicateSampleId { id: String },
-
-    #[error("Invalid barcode sequence for {id} `{barcode}` - {reason}. {line}")]
-    InvalidBarcode { barcode: String, id: String, reason: ReasonBarcodeInvalid, line: ErrorLine },
-
-    #[error("Io error occurred")]
-    Io(#[from] std::io::Error),
-
-    #[error(transparent)]
-    Deserialize(#[from] csv::Error),
-
-    #[error("Unable to deserialize line number {line}")]
-    DeserializeRecord { source: csv::Error, line: usize },
-
-    #[error(
-        "{sample_a}:{barcode_a} and {sample_b}:{barcode_b} have barcodes with different lengths."
-    )]
-    UnequalBarcodeLengths {
-        sample_a: String,
-        barcode_a: String,
-        sample_b: String,
-        barcode_b: String,
-    },
-
-    #[error("Sample metadata must include at least one sample")]
-    ZeroSamples,
-}
-
-/// A single row in a sample metadata file.
+/// Metadata about a sample.
+///
+/// Metadata may be derived from a simple CSV file or a Singular Genomics Sample Sheet.
+///
+/// See the `update_with()` method to derive the barcode for demultiplexing from either the
+/// `raw_barcode` or the `index1`/`index2` fields.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, Eq)]
 pub struct SampleMetadata {
     /// The unique identifier for the sample.
     #[serde(alias = "Sample_ID", rename(serialize = "Sample_ID"))]
     pub sample_id: String,
-    /// The sample barcode sequence.
-    ///
-    /// If the sample barcode is present across multiple reads (ex. dual-index, or inline in both reads of a pair),
-    /// then the expected barcode bases from each read should be concatenated in the same order as the order of
-    /// the reads' FASTQs and read structures given. Non-ACTG characters will be removed.
-    #[serde(alias = "Sample_Barcode", rename(serialize = "Sample_Barcode"))]
-    pub raw_barcode: BString,
 
-    /// The sanitized `raw_barcode`
+    /// The sample barcode sequence concatenated across all reads in the order the reads are
+    /// given.
+    #[serde(alias = "Sample_Barcode", rename(serialize = "Sample_Barcode"))]
+    pub raw_barcode: Option<BString>,
+
+    /// The lane number.
+    #[serde(alias = "Lane", rename(serialize = "Lane"))]
+    pub lane: Option<usize>,
+
+    /// The sample barcode in the index1 read
+    #[serde(alias = "Index1_Sequence", rename(serialize = "Index1_Sequence"))]
+    pub index1: Option<BString>,
+
+    /// The sample barcode in the index2 read
+    #[serde(alias = "Index2_Sequence", rename(serialize = "Index2_Sequence"))]
+    pub index2: Option<BString>,
+
+    /// The sanitized `raw_barcode` used for demultiplexing.
     #[serde(skip)]
     pub barcode: BString,
 
     /// The number of the sample in the samplesheet (corresponds to the row number), starts at 0.
     #[serde(skip)]
     pub ordinal: usize,
+
+    /// The line number in the input in which this sample was defined
+    pub line_number: Option<usize>,
 }
 
 impl SampleMetadata {
@@ -122,15 +58,25 @@ impl SampleMetadata {
     ///
     /// # Errors
     ///
-    /// - [`SampleMetadataError::InvalidBarcode`] if the barcode is invalid
+    /// - [`SampleSheetError::InvalidBarcode`] if the barcode is invalid
     pub fn new(
         sample_id: String,
         barcode: BString,
         number: usize,
-    ) -> Result<Self, SampleMetadataError> {
+        line_number: usize,
+    ) -> Result<Self, SampleSheetError> {
         let fixed = Self::sanitize_barcode(barcode.as_ref());
         Self::validate_barcode(fixed.as_ref(), &sample_id, None)?;
-        Ok(Self { sample_id, raw_barcode: barcode, barcode: fixed, ordinal: number })
+        Ok(Self {
+            sample_id,
+            raw_barcode: Some(barcode),
+            index1: None,
+            index2: None,
+            lane: None,
+            barcode: fixed,
+            ordinal: number,
+            line_number: Some(line_number),
+        })
     }
 
     /// Create a new [`SampleMetadata`] object without sanitizing the bases first.
@@ -140,27 +86,91 @@ impl SampleMetadata {
     ///
     /// # Errors
     ///
-    /// - [`SampleMetadataError::InvalidBarcode`] if the barcode is invalid
+    /// - [`SampleSheetError::InvalidBarcode`] if the barcode is invalid
     pub fn new_allow_invalid_bases(
         sample_id: String,
         barcode: BString,
         number: usize,
-    ) -> Result<Self, SampleMetadataError> {
-        Ok(Self { sample_id, raw_barcode: barcode.clone(), barcode, ordinal: number })
+    ) -> Result<Self, SampleSheetError> {
+        Ok(Self {
+            sample_id,
+            raw_barcode: Some(barcode.clone()),
+            index1: None,
+            index2: None,
+            lane: None,
+            barcode,
+            ordinal: number,
+            line_number: None,
+        })
+    }
+
+    /// Updates the sample metadata.
+    ///
+    /// 1. Sets the ordinal
+    /// 2. Sets the sample barcode to use for demultiplexing.
+    ///
+    /// If `raw_barcode` is not `None`, then both `index1` and `index2` must be `None`.
+    /// Furthermore, if the sample barcode is present across multiple reads (ex. dual-index, or
+    /// inline in both reads of a pair), then the barcode bases from each read should be
+    /// concatenated in the same order as the order of the reads' FASTQs and read structures given.
+    ///
+    /// If either `index1` or `index2` is not `None`, then `raw_barcode` must be `None`.  If both
+    /// `index1` and `index2` are given, then `barcode` should be the concatenation of the two,
+    /// otherwise `barcode` will be the index that is present.
+    ///
+    /// The final `barcode` will have non-ACTG characters removed.
+    pub fn update_with_and_set_demux_barcode(
+        mut self,
+        ordinal: usize,
+        line_number: usize,
+    ) -> Result<Self, SampleSheetError> {
+        // Update the ordinal and line number
+        self.ordinal = ordinal;
+        self.line_number = Some(line_number);
+
+        // Update the sample barcode to use for demultiplexing
+        let raw_barcode = match (self.raw_barcode.clone(), self.index1.clone(), self.index2.clone())
+        {
+            // Use the Sample_Barcode
+            (Some(raw), None, None) => raw,
+            // Concatenate i1 and i2
+            (None, Some(i1), Some(i2)) => BString::from([i1, i2].iter().join("")),
+            // Just i1
+            (None, Some(i1), None) => i1,
+            // Just i2
+            (None, None, Some(i2)) => i2,
+            // No sample barcode
+            (None, None, None) => BString::from(""),
+            // Both Sample_Barcode and i1/i2, so an error
+            (_, i1, i2) => {
+                let index_name = match (i1, i2) {
+                    (Some(_), Some(_)) => "Index1_Sequence and Index2_Sequence",
+                    (Some(_), None) => "Index1_Sequence",
+                    (None, Some(_)) => "Index2_Sequence",
+                    (None, None) => "Bug",
+                };
+                return Err(SampleSheetError::BarcodeColumnCollision {
+                    index_name: index_name.to_string(),
+                    line: line_number,
+                });
+            }
+        };
+        self.barcode = SampleMetadata::sanitize_barcode(raw_barcode.as_ref());
+        Ok(self)
     }
 
     /// Run a set of validations on a barcode to ensure that it is well formed.
     ///
     /// # Errors
     ///
-    /// - [`SampleMetadataError::InvalidBarcode`] if the barcode is invalid
+    /// - [`SampleSheetError::InvalidBarcode`] if the barcode is invalid
     pub fn validate_barcode(
         barcode: &BStr,
         id: &str,
         line_number: Option<usize>,
-    ) -> Result<(), SampleMetadataError> {
+    ) -> Result<(), SampleSheetError> {
         if barcode.len() == 0 {
-            Err(SampleMetadataError::InvalidBarcode {
+            Err(SampleSheetError::InvalidBarcode {
                 id: id.to_owned(),
                 barcode: barcode.to_string(),
                 reason: ReasonBarcodeInvalid::EmptyString,
@@ -185,22 +195,22 @@ impl SampleMetadata {
     ///
     /// # Errors
     ///
-    /// - [`SampleMetadataError::BarcodeCollision`] if two barcodes are with the allowed distance
-    /// - [`SampleMetadataError::UnequalBarcodeLengths`] if two barcodes have unequal length
+    /// - [`SampleSheetError::BarcodeCollision`] if two barcodes are with the allowed distance
+    /// - [`SampleSheetError::UnequalBarcodeLengths`] if two barcodes have unequal length
     pub fn validate_barcode_pairs(
         samples: &[Self],
         min_mismatches: usize,
-    ) -> Result<(), SampleMetadataError> {
+    ) -> Result<(), SampleSheetError> {
         for (i, sample) in samples.iter().enumerate() {
             let barcode = &sample.barcode;
             for other in samples.iter().skip(i + 1) {
                 // Ensure barcodes have equal length
                 if barcode.len() != other.barcode.len() {
-                    return Err(SampleMetadataError::UnequalBarcodeLengths {
+                    return Err(SampleSheetError::UnequalBarcodeLengths {
                         sample_a: sample.sample_id.clone(),
-                        barcode_a: sample.raw_barcode.to_string(),
+                        barcode_a: sample.barcode.to_string(),
                         sample_b: other.sample_id.clone(),
-                        barcode_b: other.raw_barcode.to_string(),
+                        barcode_b: other.barcode.to_string(),
                     });
                 }
 
@@ -208,11 +218,11 @@ impl SampleMetadata {
 
                 // Ensure barcodes don't collide
                 if distance < min_mismatches {
-                    return Err(SampleMetadataError::BarcodeCollision {
+                    return Err(SampleSheetError::BarcodeCollision {
                         sample_a: sample.sample_id.clone(),
-                        barcode_a: sample.raw_barcode.to_string(),
+                        barcode_a: sample.barcode.to_string(),
                         sample_b: other.sample_id.clone(),
-                        barcode_b: other.raw_barcode.to_string(),
+                        barcode_b: other.barcode.to_string(),
                         distance,
                     });
                 }
@@ -237,82 +247,72 @@ impl AsRef<SampleMetadata> for SampleMetadata {
     }
 }
 
-/// Deserialize a [`SampleMetadata`] file.
+/// Validates a set of samples ([`SampleMetadata`] objects).
 ///
 /// If the `min_mismatch` is provided, the barcodes will be validated to ensure that there are no collisions.
 ///
 /// # Errors
 ///
-/// - [`SampleMetadataError::DuplicateSampleId`]
-/// - [`SampleMetadataError::InvalidBarcode`]
-/// - [`SampleMetadataError::BarcodeCollision`]
-pub fn from_path<P: AsRef<Path>>(
-    path: P,
+/// - [`SampleSheetError::DuplicateSampleId`]
+/// - [`SampleSheetError::InvalidBarcode`]
+/// - [`SampleSheetError::BarcodeCollision`]
+pub fn validate_samples(
+    mut samples: Vec<SampleMetadata>,
     min_mismatch: Option<usize>,
     undetermined_name: &str,
-) -> Result<Vec<SampleMetadata>, SampleMetadataError> {
-    let mut reader = csv::ReaderBuilder::new().has_headers(true).delimiter(b',').from_path(path)?;
-    let mut ids = HashSet::new();
+) -> Result<Vec<SampleMetadata>, SampleSheetError> {
+    if samples.is_empty() {
+        return Err(SampleSheetError::ZeroSamples);
+    }
 
-    let mut records = vec![];
-    for (number, record) in reader.deserialize().enumerate() {
-        // Note that line numbers a +2 to account for the header and convert to 1-based counting
-        let mut record: SampleMetadata = record
-            .map_err(|e| SampleMetadataError::DeserializeRecord { source: e, line: number + 2 })?;
-        let fixed = SampleMetadata::sanitize_barcode(record.raw_barcode.as_ref());
+    // Check for duplicate sample identifiers
+    // TODO: same sample id, but across lanes
+    let mut ids = HashSet::new();
+    for record in &samples {
         if !ids.insert(record.sample_id.clone()) {
-            return Err(SampleMetadataError::DuplicateSampleId { id: record.sample_id });
+            return Err(SampleSheetError::DuplicateSampleId { id: record.sample_id.clone() });
         }
-        record.barcode = fixed;
-        record.ordinal = number;
-        records.push(record);
     }
 
     // Support a special case where a single-sample samplesheet with no barcode sequence for the
     // sample indicates a non-demultiplexing run.  When this is the case we will not validate
     // sample barcodes or insert an Undetermined record into the metadata.
-    let is_demultiplexing = records.len() > 1 || records[0].barcode.len() > 0;
-
-    if records.is_empty() {
-        return Err(SampleMetadataError::ZeroSamples);
-    } else if is_demultiplexing {
+    if samples.len() > 1 || samples[0].barcode.len() > 0 {
         // Only validate barcodes if we have more than one sample, since we allow an empty
         // barcode on a single sample.
-        for sample in records.iter() {
+        for sample in &samples {
             SampleMetadata::validate_barcode(
                 sample.barcode.as_ref(),
                 &sample.sample_id,
-                Some(sample.ordinal + 2),
+                sample.line_number,
             )?;
         }
 
         if let Some(min_mismatch) = min_mismatch {
-            SampleMetadata::validate_barcode_pairs(&records, min_mismatch)?;
+            SampleMetadata::validate_barcode_pairs(&samples, min_mismatch)?;
         }
-    }
 
-    // If we have more than one sample, or we have one sample with an actual barcode
-    // then add in the undetermined sample.
-    if is_demultiplexing {
-        records.push(SampleMetadata::new_allow_invalid_bases(
+        // If we have more than one sample, or we have one sample with an actual barcode
+        // then add in the undetermined sample.
+        samples.push(SampleMetadata::new_allow_invalid_bases(
             String::from(undetermined_name),
-            BString::from(vec![b'N'; records[0].barcode.len()]),
-            records.len(),
+            BString::from(vec![b'N'; samples[0].barcode.len()]),
+            samples.len(),
         )?);
     }
 
-    Ok(records)
+    Ok(samples)
 }
 
 /// Serialize a collection of [`SampleMetadata`] into a file.
 ///
 /// # Errors
 ///
-/// - [`SampleMetadataError::Io`]
+/// - [`SampleSheetError::Io`]
 pub fn to_path<P: AsRef<Path>, S: AsRef<SampleMetadata> + Serialize, I: IntoIterator<Item = S>>(
     path: P,
     samples: I,
-) -> Result<(), SampleMetadataError> {
+) -> Result<(), SampleSheetError> {
     let mut writer = csv::WriterBuilder::new().has_headers(true).delimiter(b',').from_path(path)?;
     for s in samples {
         writer.serialize(s)?;
@@ -327,9 +327,9 @@ mod tests {
     use matches::assert_matches;
     use tempfile::tempdir;
 
-    use crate::matcher::UNDETERMINED_NAME;
-
     use super::*;
+    use crate::opts::Opts;
+    use crate::sample_sheet::SampleSheet;
     use itertools::Itertools;
     use std::fs;
 
@@ -338,18 +338,20 @@ mod tests {
         let tempdir = tempdir().unwrap();
         let input_path = tempdir.path().join("input.csv");
         let samples = vec![
-            SampleMetadata::new(String::from("Sample1"), BString::from("ACTG"), 0).unwrap(),
-            SampleMetadata::new(String::from("Sample2"), BString::from("CTGA"), 1).unwrap(),
-            SampleMetadata::new(String::from("Sample3"), BString::from("AAAA"), 2).unwrap(),
-            SampleMetadata::new(String::from("Sample4"), BString::from("GCGC"), 3).unwrap(),
+            SampleMetadata::new(String::from("Sample1"), BString::from("ACTG"), 0, 2).unwrap(),
+            SampleMetadata::new(String::from("Sample2"), BString::from("CTGA"), 1, 3).unwrap(),
+            SampleMetadata::new(String::from("Sample3"), BString::from("AAAA"), 2, 4).unwrap(),
+            SampleMetadata::new(String::from("Sample4"), BString::from("GCGC"), 3, 5).unwrap(),
         ];
 
         to_path(&input_path, samples.iter()).unwrap();
 
-        let found_samples = from_path(&input_path, None, UNDETERMINED_NAME)
-            .unwrap()
+        let opts = Opts { sample_metadata: input_path, ..Opts::default() };
+        let sample_sheet = SampleSheet::from_path(opts).unwrap();
+        let found_samples = sample_sheet
+            .samples
             .into_iter()
-            .filter(|s| s.sample_id != UNDETERMINED_NAME)
+            .filter(|s| s.sample_id != sample_sheet.opts.undetermined_sample_name)
             .collect_vec();
 
         assert_eq!(found_samples.len(), 4, "Found wrong number of serialized samples.");
@@ -363,16 +365,18 @@ mod tests {
         let tempdir = tempdir().unwrap();
         let input_path = tempdir.path().join("input.csv");
         let samples = vec![
-            SampleMetadata::new(String::from("Sample1"), BString::from("ACNN"), 0).unwrap(),
-            SampleMetadata::new(String::from("Sample2"), BString::from("CTGA"), 1).unwrap(),
-            SampleMetadata::new(String::from("Sample3"), BString::from("AAAA"), 2).unwrap(),
-            SampleMetadata::new(String::from("Sample4"), BString::from("GCGC"), 3).unwrap(),
+            SampleMetadata::new(String::from("Sample1"), BString::from("ACNN"), 0, 2).unwrap(),
+            SampleMetadata::new(String::from("Sample2"), BString::from("CTGA"), 1, 3).unwrap(),
+            SampleMetadata::new(String::from("Sample3"), BString::from("AAAA"), 2, 4).unwrap(),
+            SampleMetadata::new(String::from("Sample4"), BString::from("GCGC"), 3, 5).unwrap(),
         ];
 
         to_path(&input_path, samples.iter()).unwrap();
 
-        let r = from_path(&input_path, Some(1), UNDETERMINED_NAME);
-        assert_matches!(r, Err(SampleMetadataError::UnequalBarcodeLengths { .. }));
+        let opts = Opts { sample_metadata: input_path, ..Opts::default() };
+        let r = SampleSheet::from_path(opts);
+
+        assert_matches!(r, Err(SampleSheetError::UnequalBarcodeLengths { .. }));
     }
 
     #[test]
@@ -381,22 +385,23 @@ mod tests {
         let input_path = tempdir.path().join("input.csv");
 
         let mut invalid =
-            SampleMetadata::new(String::from("Sample3"), BString::from("AAAA"), 2).unwrap();
+            SampleMetadata::new(String::from("Sample3"), BString::from("AAAA"), 2, 4).unwrap();
         // overwrite the "good" barcode that will be serialized
-        invalid.raw_barcode = BString::from("");
+        invalid.raw_barcode = Some(BString::from(""));
 
         let samples = vec![
-            SampleMetadata::new(String::from("Sample1"), BString::from("ACTG"), 0).unwrap(),
-            SampleMetadata::new(String::from("Sample2"), BString::from("CTGA"), 1).unwrap(),
+            SampleMetadata::new(String::from("Sample1"), BString::from("ACTG"), 0, 2).unwrap(),
+            SampleMetadata::new(String::from("Sample2"), BString::from("CTGA"), 1, 3).unwrap(),
             invalid,
-            SampleMetadata::new(String::from("Sample4"), BString::from("GCGC"), 3).unwrap(),
+            SampleMetadata::new(String::from("Sample4"), BString::from("GCGC"), 3, 5).unwrap(),
         ];
 
         to_path(&input_path, samples.iter()).unwrap();
-        let r = from_path(&input_path, Some(1), UNDETERMINED_NAME);
+        let opts = Opts { sample_metadata: input_path, allowed_mismatches: 1, ..Opts::default() };
+        let r = SampleSheet::from_path(opts);
 
-        assert_matches!(r, Err(SampleMetadataError::InvalidBarcode { .. }));
-        if let Err(SampleMetadataError::InvalidBarcode { barcode, id, reason, line }) = r {
+        assert_matches!(r, Err(SampleSheetError::InvalidBarcode { .. }));
+        if let Err(SampleSheetError::InvalidBarcode { barcode, id, reason, line }) = r {
             assert_eq!(line.0, Some(4));
             assert_eq!(barcode, String::from(""));
             assert_eq!(id, String::from("Sample3"));
@@ -411,17 +416,18 @@ mod tests {
         let tempdir = tempdir().unwrap();
         let input_path = tempdir.path().join("input.csv");
         let samples = vec![
-            SampleMetadata::new(String::from("Sample1"), BString::from("ACGT"), 0).unwrap(),
-            SampleMetadata::new(String::from("Sample1"), BString::from("CTGA"), 1).unwrap(),
-            SampleMetadata::new(String::from("Sample3"), BString::from("AAAA"), 2).unwrap(),
-            SampleMetadata::new(String::from("Sample4"), BString::from("GCGC"), 3).unwrap(),
+            SampleMetadata::new(String::from("Sample1"), BString::from("ACGT"), 0, 2).unwrap(),
+            SampleMetadata::new(String::from("Sample1"), BString::from("CTGA"), 1, 3).unwrap(),
+            SampleMetadata::new(String::from("Sample3"), BString::from("AAAA"), 2, 4).unwrap(),
+            SampleMetadata::new(String::from("Sample4"), BString::from("GCGC"), 3, 5).unwrap(),
         ];
 
         to_path(&input_path, samples.iter()).unwrap();
+        let opts = Opts { sample_metadata: input_path, ..Opts::default() };
 
         assert_matches!(
-            from_path(&input_path, None, UNDETERMINED_NAME),
-            Err(SampleMetadataError::DuplicateSampleId { .. })
+            SampleSheet::from_path(opts),
+            Err(SampleSheetError::DuplicateSampleId { .. })
         );
     }
 
@@ -430,18 +436,20 @@ mod tests {
         let tempdir = tempdir().unwrap();
         let input_path = tempdir.path().join("input.csv");
         let samples = vec![
-            SampleMetadata::new(String::from("Sample1"), BString::from("ACTG"), 0).unwrap(),
-            SampleMetadata::new(String::from("Sample2"), BString::from("CTGA"), 1).unwrap(),
-            SampleMetadata::new(String::from("Sample3"), BString::from("AAAA"), 2).unwrap(),
-            SampleMetadata::new(String::from("Sample4"), BString::from("GCGC"), 3).unwrap(),
-            SampleMetadata::new(String::from("Sample5"), BString::from("GGGC"), 4).unwrap(),
+            SampleMetadata::new(String::from("Sample1"), BString::from("ACTG"), 0, 2).unwrap(),
+            SampleMetadata::new(String::from("Sample2"), BString::from("CTGA"), 1, 3).unwrap(),
+            SampleMetadata::new(String::from("Sample3"), BString::from("AAAA"), 2, 4).unwrap(),
+            SampleMetadata::new(String::from("Sample4"), BString::from("GCGC"), 3, 5).unwrap(),
+            SampleMetadata::new(String::from("Sample5"), BString::from("GGGC"), 4, 6).unwrap(),
         ];
 
         to_path(&input_path, samples.iter()).unwrap();
 
+        let opts = Opts { sample_metadata: input_path, allowed_mismatches: 2, ..Opts::default() };
+
         assert_matches!(
-            from_path(&input_path, Some(2), UNDETERMINED_NAME),
-            Err(SampleMetadataError::BarcodeCollision { .. })
+            SampleSheet::from_path(opts),
+            Err(SampleSheetError::BarcodeCollision { .. })
         );
     }
 
@@ -455,24 +463,24 @@ Sample_ID,Sample_Barcode
 Sample1,ACTG
 
 Sample2,GGGG
-
-
-
 ";
         fs::write(&input_path, bytes).unwrap();
 
+        let opts = Opts::default();
         let expected = vec![
-            SampleMetadata::new(String::from("Sample1"), BString::from("ACTG"), 0).unwrap(),
-            SampleMetadata::new(String::from("Sample2"), BString::from("GGGG"), 1).unwrap(),
+            SampleMetadata::new(String::from("Sample1"), BString::from("ACTG"), 0, 2).unwrap(),
+            SampleMetadata::new(String::from("Sample2"), BString::from("GGGG"), 1, 3).unwrap(),
             SampleMetadata::new_allow_invalid_bases(
-                UNDETERMINED_NAME.to_string(),
+                opts.undetermined_sample_name.to_string(),
                 BString::from("NNNN"),
                 2,
             )
             .unwrap(),
         ];
 
-        assert_eq!(from_path(&input_path, Some(1), UNDETERMINED_NAME).unwrap(), expected);
+        let opts = Opts { sample_metadata: input_path, allowed_mismatches: 1, ..Opts::default() };
+
+        assert_eq!(SampleSheet::from_path(opts).unwrap().samples, expected);
     }
 
     #[test]
@@ -489,18 +497,21 @@ Sample2,GGGG
 
 ";
         fs::write(&input_path, bytes).unwrap();
-        // Failes with barcode empty error
+
+        let opts = Opts { sample_metadata: input_path, allowed_mismatches: 1, ..Opts::default() };
+        let result = SampleSheet::from_path(opts);
         assert_matches!(
-            from_path(&input_path, Some(1), UNDETERMINED_NAME),
-            Err(SampleMetadataError::InvalidBarcode { .. })
+            result,
+            Err(SampleSheetError::InvalidBarcode { barcode: _, id: _, reason: _, line: _ })
         );
+        // do not validate the line number because blank lines are not counted
     }
 
     #[test]
     fn test_empty_barcode() {
-        let r = SampleMetadata::new(String::from("Sample1"), BString::from(""), 0);
-        assert_matches!(r, Err(SampleMetadataError::InvalidBarcode { .. }));
-        if let Err(SampleMetadataError::InvalidBarcode { barcode, id, reason, line }) = r {
+        let r = SampleMetadata::new(String::from("Sample1"), BString::from(""), 0, 2);
+        assert_matches!(r, Err(SampleSheetError::InvalidBarcode { .. }));
+        if let Err(SampleSheetError::InvalidBarcode { barcode, id, reason, line }) = r {
             assert!(line.0.is_none());
             assert_eq!(barcode, String::from(""));
             assert_eq!(id, String::from("Sample1"));

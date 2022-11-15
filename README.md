@@ -4,6 +4,32 @@
 
 This repository is home to the `sgdemux` tool for demultiplexing sequencing data generated on Singular Genomics' sequencing instruments.
 
+
+* [Installation](#installation)
+  * [From Bioconda](#from-bioconda)
+  * [From Releases](#from-releases)
+  * [From Source](#from-source)
+* [Contributing](#contributing)
+* [Overview](#overview)
+* [Usage](#usage)
+  * [Inputs](#inputs)
+    * [FASTQ Files](#fastq-files)
+    * [Read Structures](#read-structures)
+    * [Sample Sheet](#sample-sheet)
+      * [Specifying Demultiplexing Command Line Options](#specifying-demultiplexing-command-line-options)
+      * [Specifying Sample Information](#specifying-sample-information)
+    * [Full Argument List](#full-argument-list)
+    * [Performance Considerations](#performance-considerations)
+  * [Outputs](#outputs)
+    * [Demultiplexed FASTQs](#demultiplexed-fastqs)
+    * [Metrics](#metrics)
+      * [per_sample_metrics.tsv](#per_sample_metricstsv)
+      * [run_metrics.tsv](#run_metricstsv)
+      * [most_frequent_unmatched.tsv](#most_frequent_unmatchedtsv)
+      * [sample_barcode_hop_metrics.tsv](#sample_barcode_hop_metricstsv)
+* [Advance Usage](#advance-usage)
+  * [Single Sample](#single-sample)
+
 ## Installation
 
 `sgdemux` may be installed from bioconda, downloaded from the releases page, or built from source.
@@ -120,19 +146,80 @@ One Read Structure must be provided for each input FASTQ file, in the same order
   --read-structures +T +T 8B 8B
 ```
 
-##### Sample Metadata
+##### Sample Sheet
 
-The sample-metadata file specified via the `--sample-metadata` option is a simple 2-column CSV file.  An example follows:
+Information about the sample(s) to demultiplex is specified within a Sample Sheet. 
+Command line options for demultiplexing may also be passed via the Sample Sheet.
+
+
+###### Specifying Demultiplexing Command Line Options
+
+Demultiplexing options within the Sample Sheet override any command line options and are specified in a `[Demux]` section.
+The name of the command line option must be in the first column with the leading `--` ommited (e.g. `fastqs` or `read-structures`).
+For flag options, the second column must be empty.
+The second column must contain the input value(s) for options that require an input value(s).
+Multiple input values must be space-separated in the second column.
+Additional columns are ignored.
+
+An example follows:
+
+```text
+[Demux]
+fastq,/path/to/i1.fastq.gz /path/to/r1.fastq.gz /path/to/r2.fastq.gz /path/to/i2.fastq.gz,
+read-structures,8B +T +T 8B,
+filter-control-reads,
+```
+
+The order of the FASTQs must match the order read structures.
+
+###### Specifying Sample Information
+
+The sample metadata file may be a Sample Sheet or a simple two-column CSV file with headers.
+
+####### Sample Sheet
+
+The Sample Sheet may haave a `[Demux]` section for command line options, and must have a `[Data]`
+section for sample information.  
+
+The `[Demux]` section must contain a line per command line option.
+The first column must contain the option long name _without_ the leading `--` (e.g. `fastqs` or 
+`read-structures`).
+The second column contains the option value, or empty if the option takes no value (i.e. a flag).
+If the option accepts multiple values, they must be space separated in the second column.
+The command line options specified in the sample sheet override those provided on the command line.
+
+The `[Data]` section must contain a header line.
+The `Sample_ID` column must contain a unique, non-empty identifier
+for each sample.  One or both of `Index1_Sequence` and `Index2_Sequence` must be present with values for
+indexed runs.  For non-indexed runs, a single sample must be given with an empty value for both the 
+`Index1_Sequence` and `Index2_Sequence` columns.
+Both `Sample_ID`s and the `Index1_Sequence`/`Index2_Sequence` combinations must be unique within the file, and both columns are required for all samples.
+
+An example follows:
+
+```text
+[Demux]
+fastqs,/path/to/i1.fq.gz /path/to/r1.fq.gz
+read-structures,+B +T
+[Data]
+Sample_ID,Index1_Sequence,Index2_Sequence
+s1,ACTGGTCA,
+s2,ATACGAAC,
+``` 
+
+####### Simple Two-column CSV
+
+For the simple two-column CSV, the `Sample_Barcode` column must contain the unique set of sample barcode bases for the sample(s).
+If multiple sample barcodes are are present (e.g. dual-indexing runs, additional inline sample indices) then the `Sample_Barcode` field should contain the full set of barcode bases expected to be read for the sample.
+The ordering of the concatenated barcodes is important, and should match the ordering of the FASTQs and Read Structures given.
+Both `Sample_ID`s and `Sample_Barcode`s must be unique within the file, and both columns are required for all samples.
+An example follows:
 
 ```text
 Sample_ID,Sample_Barcode
 s1,ACTGGTCA
 s2,ATACGAAC
-```
-
-Both `Sample_ID`s and `Sample_Barcode`s must be unique within the file, and both columns are required for all samples.
-
-If multiple sample barcodes are are present (e.g. dual-indexing runs, additional inline sample indices) then the `Sample_Barcode` field should contain the full set of barcode bases expected to be read for the sample.  Characters other than A, C, G and T may be present in the `Sample_Barcode` field, but will be ignored.  The ordering of the concatenated barcodes is important, and should match the ordering of the FASTQs and Read Structures given.
+``` 
 
 For example if a dual-indexing run was performed with an additional inline sample barcode in read 1, and `sgdemux` was invoked with the following options:
 

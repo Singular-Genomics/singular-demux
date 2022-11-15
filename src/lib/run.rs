@@ -1,292 +1,23 @@
-use std::{fs::File, io::BufWriter, num::NonZeroUsize, path::PathBuf, sync::Arc, vec::Vec};
+use std::{fs::File, io::BufWriter, sync::Arc, vec::Vec};
 
-use anyhow::{anyhow, bail, ensure, Context, Result};
-use clap::Parser;
-use env_logger::Env;
+use anyhow::{bail, ensure, Context, Result};
 use gzp::BUFSIZE;
 use itertools::Itertools;
 use log::{debug, info};
 use parking_lot::Mutex;
 use pooled_writer::{bgzf::BgzfCompressor, Pool};
 use rayon::prelude::*;
-use read_structure::{ReadStructure, SegmentType};
 
 use crate::{
-    demux::{Demultiplex, Demultiplexer, DemuxReadFilterConfig, DemuxedGroup, PerFastqRecordSet},
-    matcher::{CachedHammingDistanceMatcher, MatcherKind, PreComputeMatcher, UNDETERMINED_NAME},
+    demux::{Demultiplex, Demultiplexer, DemuxedGroup, PerFastqRecordSet},
+    matcher::{CachedHammingDistanceMatcher, MatcherKind, PreComputeMatcher},
     metrics::{DemuxedGroupMetrics, UnmatchedCounterThread},
+    opts::{Opts, LOGO},
     pooled_sample_writer::PooledSampleWriter,
-    sample_metadata::{self},
+    sample_sheet::{self},
     thread_reader::ThreadReader,
-    utils::{built_info, check_bgzf, filenames, MultiZip},
+    utils::{check_bgzf, filenames, MultiZip},
 };
-
-static LOGO: &str = "
-███████╗██╗███╗   ██╗ ██████╗ ██╗   ██╗██╗      █████╗ ██████╗
-██╔════╝██║████╗  ██║██╔════╝ ██║   ██║██║     ██╔══██╗██╔══██╗
-███████╗██║██╔██╗ ██║██║  ███╗██║   ██║██║     ███████║██████╔╝
-╚════██║██║██║╚██╗██║██║   ██║██║   ██║██║     ██╔══██║██╔══██╗
-███████║██║██║ ╚████║╚██████╔╝╚██████╔╝███████╗██║  ██║██║  ██║
-╚══════╝╚═╝╚═╝  ╚═══╝ ╚═════╝  ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝
-
- ██████╗ ███████╗███╗   ██╗ ██████╗ ███╗   ███╗██╗ ██████╗███████╗
-██╔════╝ ██╔════╝████╗  ██║██╔═══██╗████╗ ████║██║██╔════╝██╔════╝
-██║  ███╗█████╗  ██╔██╗ ██║██║   ██║██╔████╔██║██║██║     ███████╗
-██║   ██║██╔══╝  ██║╚██╗██║██║   ██║██║╚██╔╝██║██║██║     ╚════██║
-╚██████╔╝███████╗██║ ╚████║╚██████╔╝██║ ╚═╝ ██║██║╚██████╗███████║
- ╚═════╝ ╚══════╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝     ╚═╝╚═╝ ╚═════╝╚══════╝
-";
-
-static SHORT_USAGE: &str = "Performs sample demultiplexing on block-compressed (BGZF) FASTQs.";
-
-static LONG_USAGE: &str = "
-███████╗██╗███╗   ██╗ ██████╗ ██╗   ██╗██╗      █████╗ ██████╗
-██╔════╝██║████╗  ██║██╔════╝ ██║   ██║██║     ██╔══██╗██╔══██╗
-███████╗██║██╔██╗ ██║██║  ███╗██║   ██║██║     ███████║██████╔╝
-╚════██║██║██║╚██╗██║██║   ██║██║   ██║██║     ██╔══██║██╔══██╗
-███████║██║██║ ╚████║╚██████╔╝╚██████╔╝███████╗██║  ██║██║  ██║
-╚══════╝╚═╝╚═╝  ╚═══╝ ╚═════╝  ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝
-
- ██████╗ ███████╗███╗   ██╗ ██████╗ ███╗   ███╗██╗ ██████╗███████╗
-██╔════╝ ██╔════╝████╗  ██║██╔═══██╗████╗ ████║██║██╔════╝██╔════╝
-██║  ███╗█████╗  ██╔██╗ ██║██║   ██║██╔████╔██║██║██║     ███████╗
-██║   ██║██╔══╝  ██║╚██╗██║██║   ██║██║╚██╔╝██║██║██║     ╚════██║
-╚██████╔╝███████╗██║ ╚████║╚██████╔╝██║ ╚═╝ ██║██║╚██████╗███████║
- ╚═════╝ ╚══════╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝     ╚═╝╚═╝ ╚═════╝╚══════╝
-
-Performs sample demultiplexing on block-compressed (BGZF) FASTQs.
-
-Input FASTQs must be block compressed (e.g. with `bgzip`).  A single bgzipped FASTQ file
-should be provided per instrument read.  One read structure should be provided per input FASTQ.
-
-The output directory specified with --output must exist.  Per-sample files with suffixes like
-_R1.fastq.gz will be written to the output directory.
-
-The sample metadata file must be a two-column CSV file with headers.  The `Sample_ID` column
-must contain a unique, non-empty identifier for each sample.  The `Sample_Barcode` column must
-contain the unique set of sample barcode bases for the sample(s).
-
-Example invocation:
-
-sgdemux \\
-  --fastqs R1.fq.gz R2.fq.gz I1.fq.gz \\
-  --read-structures +T +T 8B \\
-  --sample-metadata samples.csv \\
-  --output demuxed-fastqs/
-
-For complete documentation see: https://github.com/Singular-Genomics/singular-demux
-For support please contact: care@singulargenomics.com
-";
-
-#[derive(Parser, Debug)]
-#[clap(name = "sgdemux", version = built_info::VERSION.as_str(), about=SHORT_USAGE, long_about=LONG_USAGE, term_width=0)]
-pub struct Opts {
-    /// Path to the input FASTQs.
-    #[clap(long, short = 'f', display_order = 1, required = true, multiple_values = true)]
-    pub fastqs: Vec<PathBuf>,
-
-    /// Path to the sample metadata.
-    #[structopt(long, short = 's', display_order = 2)]
-    pub sample_metadata: PathBuf,
-
-    /// Read structures, one per input FASTQ.
-    #[clap(long, short = 'r', display_order = 3, required = true, multiple_values = true)]
-    pub read_structures: Vec<ReadStructure>,
-
-    /// The directory to write outputs, the directory must exist.
-    ///
-    /// This tool will overwrite existing files.
-    #[clap(long, short, display_order = 4)]
-    pub output_dir: PathBuf,
-
-    /// Number of allowed mismatches between the observed barcode and the expected barcode.
-    #[clap(long, short = 'm', default_value = "1", display_order = 11)]
-    pub allowed_mismatches: usize,
-
-    /// The minimum allowed difference between an observed barcode and the second closest expected
-    /// barcode.
-    #[clap(long, short = 'd', default_value = "2", display_order = 11)]
-    pub min_delta: usize,
-
-    /// Number of N's to allow in a barcode without counting against the allowed_mismatches
-    #[clap(long, short = 'F', default_value = "1", display_order = 11)]
-    pub free_ns: usize,
-
-    /// Max no-calls (N's) in a barcode before it is considered unmatchable.
-    ///
-    /// A barcode with total N's greater than `max_no_call` will be considered unmatchable.
-    ///
-    /// [default: None]
-    #[clap(long, short = 'N', display_order = 11)]
-    pub max_no_calls: Option<usize>,
-
-    /// Mask template bases with quality scores less than specified value(s).
-    ///
-    /// Sample /// barcode/index and UMI bases are never masked. If provided either a single value,
-    /// or one value per FASTQ must be provided.
-    #[clap(long, short = 'M', required = false, multiple = true, display_order = 11)]
-    pub quality_mask_threshold: Vec<u8>,
-
-    /// Filter out control reads.
-    #[clap(long, short = 'C', display_order = 11)]
-    pub filter_control_reads: bool,
-
-    /// Filter reads failing quality filter.
-    #[clap(long, short = 'Q', display_order = 11)]
-    pub filter_failing_quality: bool,
-
-    /// The types of output FASTQs to write.
-    ///
-    /// These may be any of the following:
-    /// - `T` - Template bases
-    /// - `B` - Sample barcode bases
-    /// - `M` - Molecular barcode bases
-    /// - `S` - Skip bases
-    ///
-    /// For each read structure, all segment types listed by `--output-types` will be output to a
-    /// FASTQ file.
-    // TODO: add FromStr implementation for SegmentType so this can be a Vec<SegmentType>.  See: https://github.com/fulcrumgenomics/read-structure/issues/3
-    #[clap(long, short = 'T', default_value = "T", verbatim_doc_comment, display_order = 21)]
-    pub output_types: String,
-
-    /// The sample name for undetermined reads (reads that do not match an expected barcode).
-    #[clap(long, short = 'u', default_value = UNDETERMINED_NAME, display_order = 21)]
-    pub undetermined_sample_name: String,
-
-    /// Output the most frequent "unmatched" barcodes up to this number.
-    ///
-    /// If set to 0 unmatched barcodes will not be collected, improving overall performance.
-    #[clap(long, short = 'U', default_value = "1000", display_order = 31)]
-    pub most_unmatched_to_output: usize,
-
-    /// Size of the channel for the unmatched barcode counter.
-    ///
-    /// Each item in the channel is a `Vec` of the barcodes of the unmatched reads. If all reads were unmatched
-    /// the max number of barcodes in the Vec would be equal to `chunksize`.
-    #[clap(long, default_value = "1000", display_order = 31, hide = true)]
-    pub most_unmatched_channel_size: usize,
-
-    /// Max number of keys the most unmatched hash map is allowed to contain.
-    #[clap(long, default_value = "5000000", display_order = 31, hide = true)]
-    pub most_unmatched_max_map_size: usize,
-
-    /// Number of keys to shrink the most unmatched hash map down to when it hits the `most_unmatched_max_map_size`.
-    #[clap(long, default_value = "5000", display_order = 31, hide = true)]
-    pub most_unmatched_downsize_to: usize,
-
-    /// The number of reads to extract from a FASTQ at one time.
-    ///
-    /// A "chunk" is the unit of parallelization for all of demultiplexing and defines how many reads are operated on at one time.
-    #[clap(long, short = 'c', default_value = "1000", display_order = 31, hide = true)]
-    pub chunksize: NonZeroUsize,
-
-    /// Number of threads for demultiplexing.
-    ///
-    /// The number of threads to use for the process of determining which input reads should be assigned to which sample.
-    #[clap(long, short = 't', default_value = "4", display_order = 31)]
-    pub demux_threads: usize,
-
-    /// Number of threads for compression the output reads.
-    ///
-    /// The number of threads to use for compressing reads that are queued for writing.
-    #[clap(long, default_value = "12", display_order = 31)]
-    pub compressor_threads: usize,
-
-    /// Number of threads for writing compressed reads to output.
-    ///
-    /// The number of threads to have writing reads to their individual output files.
-    #[clap(long, default_value = "5", display_order = 31)]
-    pub writer_threads: usize,
-
-    /// The number of threads to use for decompression for each reader.
-    #[clap(long, default_value = "4", display_order = 31, hide = true)]
-    pub decompression_threads_per_reader: usize,
-
-    /// Override the matcher heuristic.
-    ///
-    /// If the sample barcodes are > 12 bp long, a cached hamming distance matcher is used.
-    /// If the barcodes are less than or equal to 12 bp long, all possible matches are precomputed.
-    ///
-    /// This option allows for overriding that heuristic.
-    ///
-    /// [default: None]
-    #[clap(long, possible_values=MatcherKind::possible_values(), display_order = 31)]
-    pub override_matcher: Option<MatcherKind>,
-}
-
-impl Opts {
-    /// Extract a [`DemuxReadFilterConfig`] from the CLI opts.
-    pub fn as_read_filter_config(&self) -> DemuxReadFilterConfig {
-        // Make a vec of quality mask thresholds that is always the same length as the number
-        // of files being demultiplexed.
-        let num_reads = self.read_structures.len();
-        let num_values = self.quality_mask_threshold.len();
-
-        // This should be validated on construction so panic here if incorrect number of
-        // masking thresholds.
-        if num_values != 0 && num_values != 1 && num_values != num_reads {
-            panic!("Opts.quality_mask_thresholds must have 0, 1 or num_fastqs values.");
-        }
-
-        let thresholds: Vec<u8> = if num_values == num_reads {
-            self.quality_mask_threshold.clone()
-        } else if num_values == 1 {
-            vec![self.quality_mask_threshold[0]; num_reads]
-        } else {
-            vec![0; num_reads]
-        };
-
-        DemuxReadFilterConfig::new(
-            self.filter_control_reads,
-            self.filter_failing_quality,
-            thresholds,
-            self.max_no_calls,
-        )
-    }
-
-    /// Get the [`SegmentType`]s to write to file from the CLI opts.
-    pub fn output_types_to_write(&self) -> Result<Vec<SegmentType>> {
-        let mut output_types_to_write = vec![];
-        for b in self.output_types.as_bytes() {
-            output_types_to_write.push(SegmentType::try_from(*b).map_err(|msg| anyhow!(msg))?);
-        }
-        Ok(output_types_to_write)
-    }
-}
-
-/// Implement defaults that match the CLI options to allow for easier testing.
-///
-/// Note that these defaults exist only within test code.
-#[cfg(test)]
-impl Default for Opts {
-    fn default() -> Self {
-        Self {
-            fastqs: vec![],
-            read_structures: vec![],
-            allowed_mismatches: 2,
-            min_delta: 1,
-            free_ns: 1,
-            filter_control_reads: false,
-            filter_failing_quality: false,
-            most_unmatched_to_output: 1_000,
-            most_unmatched_channel_size: 1_000,
-            most_unmatched_max_map_size: 5_000_000,
-            most_unmatched_downsize_to: 5_000,
-            max_no_calls: Some(1),
-            quality_mask_threshold: vec![0],
-            output_types: String::from("T"),
-            undetermined_sample_name: UNDETERMINED_NAME.to_string(),
-            sample_metadata: PathBuf::default(),
-            chunksize: NonZeroUsize::new(500).unwrap(),
-            demux_threads: 16,
-            compressor_threads: 4,
-            writer_threads: 4,
-            decompression_threads_per_reader: 4,
-            override_matcher: None,
-            output_dir: PathBuf::default(),
-        }
-    }
-}
 
 /// Run demultiplexing.
 #[allow(clippy::too_many_lines)]
@@ -296,11 +27,9 @@ pub fn run(opts: Opts) -> Result<(), anyhow::Error> {
     let read_filter_config = opts.as_read_filter_config();
 
     let output_types_to_write = opts.output_types_to_write()?;
-    let samples = sample_metadata::from_path(
-        opts.sample_metadata,
-        Some(opts.allowed_mismatches),
-        &opts.undetermined_sample_name,
-    )?;
+    let sample_sheet = sample_sheet::SampleSheet::from_path(opts)?;
+    let samples = sample_sheet.samples;
+    let opts = sample_sheet.opts;
 
     // If there is only a single sample in the metadata and that sample has no barcode
     // specified the tool is being run to filter/mask/etc. _without_ demultiplexing
@@ -546,16 +275,6 @@ pub fn run(opts: Opts) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-/// Parse args and set up logging / tracing
-pub fn setup() -> Opts {
-    if std::env::var("RUST_LOG").is_err() {
-        std::env::set_var("RUST_LOG", "info");
-    }
-    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
-
-    Opts::parse()
-}
-
 #[cfg(test)]
 mod test {
     use std::{
@@ -574,7 +293,8 @@ mod test {
         fastq_header::FastqHeader,
         matcher::{MatcherKind, UNDETERMINED_NAME},
         metrics::{BarcodeCount, RunMetrics, SampleMetricsProcessed},
-        sample_metadata::{self, SampleMetadata, SampleMetadataError},
+        sample_metadata::SampleMetadata,
+        sample_sheet::{SampleSheet, SampleSheetError},
         utils::{
             filename,
             test_commons::{
@@ -630,15 +350,11 @@ mod test {
             ..Opts::default()
         };
 
-        let samples = sample_metadata::from_path(
-            metadata,
-            Some(opts.allowed_mismatches),
-            &opts.undetermined_sample_name,
-        )
-        .unwrap();
-        run(opts).unwrap();
+        let sample_sheet = SampleSheet::from_path(opts).unwrap();
 
-        let fastq = output.join(filename(&samples[0], &SegmentType::Template, 1));
+        run(sample_sheet.opts).unwrap();
+
+        let fastq = output.join(filename(&sample_sheet.samples[0], &SegmentType::Template, 1));
         slurp_fastq(&fastq)
     }
 
@@ -809,21 +525,15 @@ mod test {
             ..Opts::default()
         };
 
-        let samples = sample_metadata::from_path(
-            &opts.sample_metadata,
-            Some(opts.allowed_mismatches),
-            &opts.undetermined_sample_name,
-        )
-        .unwrap();
+        let sample_sheet = SampleSheet::from_path(opts).unwrap();
+        let output_types_to_write = sample_sheet.opts.output_types_to_write().unwrap();
 
-        let output_types_to_write = opts.output_types_to_write().unwrap();
-
-        run(opts).unwrap();
+        run(sample_sheet.opts).unwrap();
 
         // Check outputs
-        for sample in &samples {
+        for sample in &sample_sheet.samples {
             for kind in &output_types_to_write {
-                let fastq = output.join(filename(&sample, &kind, 1));
+                let fastq = output.join(filename(sample, kind, 1));
                 let records = slurp_fastq(&fastq);
                 let (names, barcodes) = names_and_barcodes(&records);
 
@@ -857,16 +567,16 @@ mod test {
             delim.read_tsv(&per_sample_metrics).unwrap();
         assert_eq!(per_sample_metrics.len(), 5);
 
-        for (metric, sample) in per_sample_metrics.into_iter().zip(samples.iter()) {
+        for (metric, sample) in per_sample_metrics.into_iter().zip(sample_sheet.samples.iter()) {
             assert_eq!(metric.barcode_name, *sample.sample_id);
             assert_eq!(metric.barcode, *sample.barcode.to_string());
             assert_eq!(metric.library_name, *sample.sample_id);
 
-            if metric.barcode_name == samples[0].sample_id {
+            if metric.barcode_name == sample_sheet.samples[0].sample_id {
                 assert_eq!(metric.templates, 2);
                 assert_eq!(metric.perfect_matches, 1);
                 assert_eq!(metric.one_mismatch_matches, 1);
-            } else if metric.barcode_name == samples[4].sample_id {
+            } else if metric.barcode_name == sample_sheet.samples[4].sample_id {
                 assert_eq!(metric.templates, 3);
                 assert_eq!(metric.perfect_matches, 0);
                 assert_eq!(metric.one_mismatch_matches, 0);
@@ -992,16 +702,11 @@ mod test {
             ..Opts::default()
         };
 
-        let samples = sample_metadata::from_path(
-            &opts.sample_metadata,
-            Some(opts.allowed_mismatches),
-            &opts.undetermined_sample_name,
-        )
-        .unwrap();
+        let sample_sheet = SampleSheet::from_path(opts).unwrap();
 
-        run(opts).unwrap();
+        run(sample_sheet.opts).unwrap();
 
-        for (i, sample) in samples.iter().enumerate() {
+        for (i, sample) in sample_sheet.samples.iter().enumerate() {
             let barcodes: Vec<_> = barcodes_per_sample[i].iter().cloned().collect();
             let assignment: Vec<_> =
                 assignments_per_sample[i].iter().map(|s| (*s).as_bytes()).collect();
@@ -1041,8 +746,8 @@ mod test {
         let delim = DelimFile::default();
         let metadata = dir.path().join("sample_metadata.csv");
         let sample =
-            SampleMetadata::new(String::from("foo"), b"TCGT".as_slice().into(), 0).unwrap();
-        let sample_result: Result<SampleMetadata, SampleMetadataError> = Ok(sample.clone());
+            SampleMetadata::new(String::from("foo"), b"TCGT".as_slice().into(), 0, 2).unwrap();
+        let sample_result: Result<SampleMetadata, SampleSheetError> = Ok(sample.clone());
         delim.write_csv(&metadata, sample_result).unwrap();
 
         let opts = Opts {
@@ -1173,15 +878,10 @@ mod test {
             ..Opts::default()
         };
 
-        let samples = sample_metadata::from_path(
-            &opts.sample_metadata,
-            Some(opts.allowed_mismatches),
-            &opts.undetermined_sample_name,
-        )
-        .unwrap();
-        run(opts).unwrap();
+        let sample_sheet = SampleSheet::from_path(opts).unwrap();
+        run(sample_sheet.opts).unwrap();
 
-        for (i, sample) in samples.iter().enumerate() {
+        for (i, sample) in sample_sheet.samples.iter().enumerate() {
             let r1_fastq = output.join(filename(sample, &SegmentType::Template, 1));
             let r2_fastq = output.join(filename(sample, &SegmentType::Template, 2));
             let r1_records = slurp_fastq(&r1_fastq);
@@ -1220,16 +920,16 @@ mod test {
         let per_sample_metrics: Vec<SampleMetricsProcessed> =
             delim.read_tsv(&per_sample_metrics).unwrap();
         assert_eq!(per_sample_metrics.len(), 5);
-        for (metric, sample) in per_sample_metrics.into_iter().zip(samples.iter()) {
+        for (metric, sample) in per_sample_metrics.into_iter().zip(sample_sheet.samples.iter()) {
             assert_eq!(metric.barcode_name, *sample.sample_id);
             assert_eq!(metric.barcode, *sample.barcode.to_string());
             assert_eq!(metric.library_name, *sample.sample_id);
 
-            if metric.barcode_name == samples[0].sample_id {
+            if metric.barcode_name == sample_sheet.samples[0].sample_id {
                 assert_eq!(metric.templates, 1);
                 assert_eq!(metric.perfect_matches, 1);
                 assert_eq!(metric.one_mismatch_matches, 0);
-            } else if metric.barcode_name == samples[4].sample_id {
+            } else if metric.barcode_name == sample_sheet.samples[4].sample_id {
                 assert_eq!(metric.templates, 0);
                 assert_eq!(metric.perfect_matches, 0);
                 assert_eq!(metric.one_mismatch_matches, 0);
@@ -1303,14 +1003,9 @@ mod test {
             ..Opts::default()
         };
 
-        let samples = sample_metadata::from_path(
-            &opts.sample_metadata,
-            Some(opts.allowed_mismatches),
-            &opts.undetermined_sample_name,
-        )
-        .unwrap();
+        let sample_sheet = SampleSheet::from_path(opts).unwrap();
 
-        run(opts).unwrap();
+        run(sample_sheet.opts).unwrap();
 
         // Setup expected
         // Note, if a read is both control and failed quality, it is counted as failed quality
@@ -1343,12 +1038,12 @@ mod test {
             delim.read_tsv(&per_sample_metrics).unwrap();
         assert_eq!(per_sample_metrics.len(), 5);
 
-        for (metric, sample) in per_sample_metrics.into_iter().zip(samples.iter()) {
+        for (metric, sample) in per_sample_metrics.into_iter().zip(sample_sheet.samples.iter()) {
             assert_eq!(metric.barcode_name, *sample.sample_id);
             assert_eq!(metric.barcode, *sample.barcode.to_string());
             assert_eq!(metric.library_name, *sample.sample_id);
 
-            if metric.barcode_name == samples[0].sample_id {
+            if metric.barcode_name == sample_sheet.samples[0].sample_id {
                 assert_eq!(metric.templates, templates);
                 assert_eq!(metric.perfect_matches, templates);
                 assert_eq!(metric.one_mismatch_matches, 0);
@@ -1421,15 +1116,11 @@ mod test {
             ..Opts::default()
         };
 
-        let samples = sample_metadata::from_path(
-            metadata_path,
-            Some(opts.allowed_mismatches),
-            &opts.undetermined_sample_name,
-        )
-        .unwrap();
+        let sample_sheet = SampleSheet::from_path(opts).unwrap();
+        let samples = sample_sheet.samples;
 
         // Run the tool and then read back the data for s1
-        run(opts).unwrap();
+        run(sample_sheet.opts).unwrap();
 
         let s1_recs =
             slurp_fastq(&output_path.join(filename(&samples[0], &SegmentType::Template, 1)));
@@ -1476,17 +1167,15 @@ mod test {
         };
 
         // Run the tool and then read back the data for s1
-        let samples = sample_metadata::from_path(
-            metadata_path,
-            Some(opts.allowed_mismatches),
-            &opts.undetermined_sample_name,
-        )
-        .unwrap();
-        let undetermined_id = opts.undetermined_sample_name.clone();
-        run(opts).unwrap();
+        let sample_sheet = SampleSheet::from_path(opts).unwrap();
+        let undetermined_id = sample_sheet.opts.undetermined_sample_name.clone();
+        run(sample_sheet.opts).unwrap();
 
-        let s1_recs =
-            slurp_fastq(&output_path.join(filename(&samples[0], &SegmentType::Template, 1)));
+        let s1_recs = slurp_fastq(&output_path.join(filename(
+            &sample_sheet.samples[0],
+            &SegmentType::Template,
+            1,
+        )));
 
         assert_eq!(s1_recs.len(), 3);
         for (idx, rec) in s1_recs.iter().enumerate() {
@@ -1559,13 +1248,9 @@ mod test {
             ..Opts::default()
         };
 
-        let samples = sample_metadata::from_path(
-            metadata,
-            Some(opts.allowed_mismatches),
-            &opts.undetermined_sample_name,
-        )
-        .unwrap();
-        run(opts).unwrap();
+        let sample_sheet = SampleSheet::from_path(opts).unwrap();
+        let samples = sample_sheet.samples;
+        run(sample_sheet.opts).unwrap();
 
         // Check the undetermined sample got no reads
         let un_recs = slurp_fastq(&output.join(filename(&samples[1], &SegmentType::Template, 1)));
