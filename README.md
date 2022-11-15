@@ -49,12 +49,20 @@ Install from pre-built binaries on the [Releases page](releases)
 ### From Source
 
 1. Install [rust and cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html)
-2. Clone the repo and build the software:
+2. Install dependencies. For example, cmake and build-essentials are required for Ubuntu 22.04. Install using commands below.
+
+```console
+sudo apt-get update 
+sudo apt-get install build-essential cmake -y
+```
+Note: cmake for older OS version such as Ubuntu 18.04 is not incompatible.   
+
+3. Clone the repo and build the software:
 
 ```console
 git clone https://github.com/Singular-Genomics/singular-demux.git
 cd singular-demux 
-cargo install
+cargo install --path ../singular-demux
 ```
 
 ## Contributing

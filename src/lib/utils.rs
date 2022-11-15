@@ -62,6 +62,18 @@ pub fn segment_kind_to_fastq_id(kind: &SegmentType) -> char {
     }
 }
 
+/// Determine the output file name for the given sample, segment type, and type number.
+pub fn filename(sample: &SampleMetadata, kind: &SegmentType, type_number: u32) -> String {
+    format!(
+        "{}_S{}_L00{}_{}{}_001.fastq.gz",
+        sample.sample_id,
+        sample.ordinal + 1,
+        1,
+        segment_kind_to_fastq_id(kind),
+        type_number
+    )
+}
+
 /// Determine the output filenames for sample given the [`SampleMetadata`] and the [`ReadStructure`].
 pub fn filenames<P: AsRef<Path>>(
     sample: &SampleMetadata,
@@ -76,12 +88,7 @@ pub fn filenames<P: AsRef<Path>>(
         for kind in structure.iter().map(|segment| segment.kind).sorted().dedup() {
             if output_types_to_write.contains(&kind) {
                 let type_number = counter.entry(kind).or_insert(1);
-                output_paths.push(output_dir.as_ref().join(format!(
-                    "{}_{}{}.fastq.gz",
-                    sample.sample_id,
-                    segment_kind_to_fastq_id(&kind),
-                    type_number
-                )));
+                output_paths.push(output_dir.as_ref().join(filename(sample, &kind, *type_number)));
                 *type_number += 1;
             }
         }
@@ -364,7 +371,7 @@ mod test {
     use gzp::{BgzfSyncWriter, Compression, MgzipSyncWriter};
     use read_structure::{ReadStructure, SegmentType};
 
-    use crate::sample_metadata::SampleMetadata;
+    use crate::{sample_metadata::SampleMetadata, utils::filename};
 
     use super::{check_bgzf, filenames, MultiZip};
     use tempfile::tempdir;
@@ -387,9 +394,9 @@ mod test {
 
         let filenames = filenames(&sample, output_dir, &read_structures, &output_types_to_write);
         let expected = vec![
-            PathBuf::from("/tmp/Sample1_R1.fastq.gz"),
-            PathBuf::from("/tmp/Sample1_R2.fastq.gz"),
-            PathBuf::from("/tmp/Sample1_I1.fastq.gz"),
+            PathBuf::from("/tmp").join(filename(&sample, &SegmentType::Template, 1)),
+            PathBuf::from("/tmp").join(filename(&sample, &SegmentType::Template, 2)),
+            PathBuf::from("/tmp").join(filename(&sample, &SegmentType::SampleBarcode, 1)),
         ];
         assert_eq!(filenames, expected);
     }

@@ -285,7 +285,7 @@ mod test {
 
     use fgoxide::io::{DelimFile, Io};
     use itertools::Itertools;
-    use read_structure::ReadStructure;
+    use read_structure::{ReadStructure, SegmentType};
     use rstest::rstest;
     use seq_io::{fastq::OwnedRecord, BaseRecord};
 
@@ -293,10 +293,10 @@ mod test {
         fastq_header::FastqHeader,
         matcher::{MatcherKind, UNDETERMINED_NAME},
         metrics::{BarcodeCount, RunMetrics, SampleMetricsProcessed},
-        sample_metadata::SampleMetadata,
+        sample_metadata::{self, SampleMetadata},
         sample_sheet::SampleSheet,
         utils::{
-            segment_kind_to_fastq_id,
+            filename,
             test_commons::{
                 create_preset_sample_metadata_file, slurp_fastq, write_reads_to_file, Fq,
                 SAMPLE_BARCODE_1, SAMPLE_BARCODE_4,
@@ -339,7 +339,7 @@ mod test {
         let opts = Opts {
             fastqs: vec![input],
             output_dir: output.clone(),
-            sample_metadata: metadata,
+            sample_metadata: metadata.clone(),
             read_structures: vec![read_structure],
             allowed_mismatches: 2,
             min_delta: 3,
@@ -350,9 +350,15 @@ mod test {
             ..Opts::default()
         };
 
+        let samples = sample_metadata::from_path(
+            metadata,
+            Some(opts.allowed_mismatches),
+            &opts.undetermined_sample_name,
+        )
+        .unwrap();
         run(opts).unwrap();
 
-        let fastq = output.join(format!("{}_R1.fastq.gz", "Sample1"));
+        let fastq = output.join(filename(&samples[0], &SegmentType::Template, 1));
         slurp_fastq(&fastq)
     }
 
@@ -529,20 +535,20 @@ mod test {
         run(sample_sheet.opts).unwrap();
 
         // Check outputs
-        for name in sample_sheet.samples.iter().map(|s| &s.sample_id) {
-            for output_type_to_write in &output_types_to_write {
-                let fastq_id = segment_kind_to_fastq_id(output_type_to_write);
-                let fastq = output.join(format!("{}_{}1.fastq.gz", name, fastq_id));
+
+        for sample in sample_sheet.samples.iter().map(|s| &s.sample_id) {
+            for kind in &output_types_to_write {
+                let fastq = output.join(filename(&sample, &kind, 1));
                 let records = slurp_fastq(&fastq);
                 let (names, barcodes) = names_and_barcodes(&records);
 
-                if *name == "Sample1" {
+                if sample.sample_id == "Sample1" {
                     assert_eq!(records.len(), 2);
                     assert!(names.contains(&b"frag1".to_vec()));
                     assert!(names.contains(&b"frag2".to_vec()));
                     assert!(barcodes.contains(&b"AAAAAAAAGATTACAGA".to_vec()));
                     assert!(barcodes.contains(&b"AAAAAAAAGATTACAGT".to_vec()));
-                } else if *name == UNDETERMINED_NAME {
+                } else if sample.sample_id == UNDETERMINED_NAME {
                     assert_eq!(records.len(), 3);
                     assert!(names.contains(&b"frag3".to_vec()));
                     assert!(names.contains(&b"frag4".to_vec()));
@@ -709,9 +715,8 @@ mod test {
             let barcodes: Vec<_> = barcodes_per_sample[i].iter().cloned().collect();
             let assignment: Vec<_> =
                 assignments_per_sample[i].iter().map(|s| (*s).as_bytes()).collect();
-            let sample_id = sample.sample_id.clone();
-            let r1_fastq = output.join(format!("{}_R1.fastq.gz", &sample_id));
-            let r2_fastq = output.join(format!("{}_R2.fastq.gz", &sample_id));
+            let r1_fastq = output.join(filename(&sample, &SegmentType::Template, 1));
+            let r2_fastq = output.join(filename(&sample, &SegmentType::Template, 2));
             let r1_records = slurp_fastq(&r1_fastq);
             let r2_records = slurp_fastq(&r2_fastq);
             let (r1_names, r1_barcodes) = names_and_barcodes(&r1_records);
@@ -745,12 +750,10 @@ mod test {
         write_reads_to_file(std::iter::once(fq.clone()), &input);
         let delim = DelimFile::default();
         let metadata = dir.path().join("sample_metadata.csv");
-        delim
-            .write_csv(
-                &metadata,
-                SampleMetadata::new(String::from("foo"), b"TCGT".as_slice().into(), 0, 2),
-            )
-            .unwrap();
+        let sample =
+            SampleMetadata::new(String::from("foo"), b"TCGT".as_slice().into(), 0, 2).unwrap();
+        let sample_result: Result<SampleMetadata, SampleMetadataError> = Ok(sample.clone());
+        delim.write_csv(&metadata, sample_result).unwrap();
 
         let opts = Opts {
             fastqs: vec![input],
@@ -767,7 +770,7 @@ mod test {
 
         run(opts).unwrap();
 
-        let record = &slurp_fastq(output.join("foo_R1.fastq.gz"))[0];
+        let record = &slurp_fastq(output.join(filename(&sample, &SegmentType::Template, 1)))[0];
         let header = FastqHeader::try_from(record.head()).unwrap();
         assert_eq!(header.comment.unwrap().other.unwrap().into_owned(), b"frag");
         assert_eq!(record.seq(), fq.seq().iter().copied().skip(4).collect::<Vec<u8>>());
@@ -884,9 +887,8 @@ mod test {
         run(sample_sheet.opts).unwrap();
 
         for (i, sample) in sample_sheet.samples.iter().enumerate() {
-            let sample_id = sample.sample_id.clone();
-            let r1_fastq = output.join(format!("{}_R1.fastq.gz", &sample_id));
-            let r2_fastq = output.join(format!("{}_R2.fastq.gz", &sample_id));
+            let r1_fastq = output.join(filename(sample, &SegmentType::Template, 1));
+            let r2_fastq = output.join(filename(sample, &SegmentType::Template, 2));
             let r1_records = slurp_fastq(&r1_fastq);
             let r2_records = slurp_fastq(&r2_fastq);
 
@@ -1107,7 +1109,7 @@ mod test {
         let opts = Opts {
             fastqs: vec![fq_path],
             output_dir: output_path.clone(),
-            sample_metadata: metadata_path,
+            sample_metadata: metadata_path.clone(),
             read_structures: vec![read_structure],
             allowed_mismatches: 1,
             min_delta: 2,
@@ -1119,12 +1121,22 @@ mod test {
             ..Opts::default()
         };
 
+        let samples = sample_metadata::from_path(
+            metadata_path,
+            Some(opts.allowed_mismatches),
+            &opts.undetermined_sample_name,
+        )
+        .unwrap();
+
         // Run the tool and then read back the data for s1
         run(opts).unwrap();
 
-        let s1_recs = slurp_fastq(&output_path.join("s1_R1.fastq.gz"));
-        let s2_recs = slurp_fastq(&output_path.join("s2_R1.fastq.gz"));
-        let un_recs = slurp_fastq(&output_path.join("Undetermined_R1.fastq.gz"));
+        let s1_recs =
+            slurp_fastq(&output_path.join(filename(&samples[0], &SegmentType::Template, 1)));
+        let s2_recs =
+            slurp_fastq(&output_path.join(filename(&samples[1], &SegmentType::Template, 1)));
+        let un_recs =
+            slurp_fastq(&output_path.join(filename(&samples[2], &SegmentType::Template, 1)));
 
         assert_eq!(s1_recs.len(), 2);
         assert_eq!(s2_recs.len(), 0);
@@ -1154,7 +1166,7 @@ mod test {
         let opts = Opts {
             fastqs: vec![fq_path],
             output_dir: output_path.clone(),
-            sample_metadata: metadata_path,
+            sample_metadata: metadata_path.clone(),
             read_structures: vec![read_structure],
             demux_threads: 2,
             compressor_threads: 2,
@@ -1164,10 +1176,18 @@ mod test {
         };
 
         // Run the tool and then read back the data for s1
+        let samples = sample_metadata::from_path(
+            metadata_path,
+            Some(opts.allowed_mismatches),
+            &opts.undetermined_sample_name,
+        )
+        .unwrap();
         let undetermined_id = opts.undetermined_sample_name.clone();
         run(opts).unwrap();
 
-        let s1_recs = slurp_fastq(&output_path.join("s1_R1.fastq.gz"));
+        let s1_recs =
+            slurp_fastq(&output_path.join(filename(&samples[0], &SegmentType::Template, 1)));
+
         assert_eq!(s1_recs.len(), 3);
         for (idx, rec) in s1_recs.iter().enumerate() {
             let expected = &reads[idx].seq[8..];
@@ -1226,7 +1246,7 @@ mod test {
         let opts = Opts {
             fastqs,
             output_dir: output.clone(),
-            sample_metadata: metadata,
+            sample_metadata: metadata.clone(),
             read_structures,
             output_types: "TBM".to_owned(),
             allowed_mismatches: 0,
@@ -1239,17 +1259,25 @@ mod test {
             ..Opts::default()
         };
 
+        let samples = sample_metadata::from_path(
+            metadata,
+            Some(opts.allowed_mismatches),
+            &opts.undetermined_sample_name,
+        )
+        .unwrap();
         run(opts).unwrap();
 
         // Check the undetermined sample got no reads
-        let un_recs = slurp_fastq(&output.join("Undetermined_R1.fastq.gz"));
+        let un_recs = slurp_fastq(&output.join(filename(&samples[1], &SegmentType::Template, 1)));
+
         assert!(un_recs.is_empty());
 
         // Check that our reads got masked appropriately
-        let r1s = slurp_fastq(&output.join("s1_R1.fastq.gz"));
-        let r2s = slurp_fastq(&output.join("s1_R2.fastq.gz"));
-        let i1s = slurp_fastq(&output.join("s1_I1.fastq.gz"));
-        let u1s = slurp_fastq(&output.join("s1_U1.fastq.gz"));
+        let r1s = slurp_fastq(&output.join(filename(&samples[0], &SegmentType::Template, 1)));
+        let r2s = slurp_fastq(&output.join(filename(&samples[0], &SegmentType::Template, 2)));
+        let i1s = slurp_fastq(&output.join(filename(&samples[0], &SegmentType::SampleBarcode, 1)));
+        let u1s =
+            slurp_fastq(&output.join(filename(&samples[0], &SegmentType::MolecularBarcode, 1)));
 
         for recs in vec![&r1s, &r2s, &i1s, &u1s].into_iter() {
             assert_eq!(recs.len(), 1);
