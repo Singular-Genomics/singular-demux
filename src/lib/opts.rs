@@ -1,16 +1,16 @@
 #![forbid(unsafe_code)]
 
-use std::{num::NonZeroUsize, path::PathBuf, vec::Vec};
+use std::{num::NonZeroUsize, path::PathBuf, str::FromStr, vec::Vec};
 
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use env_logger::Env;
-use read_structure::{ReadStructure, SegmentType};
+use read_structure::{ReadSegment, ReadStructure, SegmentType};
 
 use crate::{
     demux::DemuxReadFilterConfig,
     matcher::{MatcherKind, UNDETERMINED_NAME},
-    utils::built_info,
+    utils::{built_info, infer_fastq_sequence_length},
 };
 
 pub static LOGO: &str = "
@@ -248,6 +248,44 @@ impl Opts {
             output_types_to_write.push(SegmentType::try_from(*b).map_err(|msg| anyhow!(msg))?);
         }
         Ok(output_types_to_write)
+    }
+
+    // TODO: docs and tests
+    pub fn convert_to_fixed_sample_barcodes(self) -> Result<Self> {
+        if self.read_structures.iter().all(|s| s.sample_barcodes().all(|b| b.has_length())) {
+            Ok(self)
+        } else {
+            let mut read_structures: Vec<ReadStructure> = vec![];
+            for (read_structure, fastq) in self.read_structures.iter().zip(self.fastqs.iter()) {
+                if read_structure
+                    .iter()
+                    .all(|s| s.kind != SegmentType::SampleBarcode || s.has_length())
+                {
+                    read_structures.push(read_structure.clone());
+                } else {
+                    let read_length: usize = infer_fastq_sequence_length(fastq.to_path_buf())?;
+                    let fixed_length: usize =
+                        read_structure.iter().map(|s| s.length().unwrap_or(0)).sum();
+                    let read_segments: Vec<ReadSegment> = read_structure
+                        .iter()
+                        .map(|s| {
+                            if s.has_length() {
+                                *s
+                            } else {
+                                ReadSegment::from_str(&format!(
+                                    "{}{}",
+                                    read_length - fixed_length,
+                                    s.kind.value()
+                                ))
+                                .unwrap()
+                            }
+                        })
+                        .collect();
+                    read_structures.push(ReadStructure::new(read_segments)?);
+                }
+            }
+            Ok(Opts { read_structures, ..self })
+        }
     }
 }
 
