@@ -14,6 +14,7 @@ This repository is home to the `sgdemux` tool for demultiplexing sequencing data
 * [Usage](#usage)
   * [Inputs](#inputs)
     * [FASTQ Files](#fastq-files)
+      * [Auto-detecting FASTQS from a Path Prefix](#auto-detecting-fastqs-from-a-path-prefix)
     * [Read Structures](#read-structures)
     * [Sample Sheet](#sample-sheet)
       * [Specifying Demultiplexing Command Line Options](#specifying-demultiplexing-command-line-options)
@@ -125,6 +126,18 @@ for read in R1 R2 I1 I2; do cat L*/${read}.fastq.gz > ./${read}.fastq.gz; done
 ```
 
 FASTQ files _must_ be BGZF compressed.
+
+All reads containing sample barcodes/indexes _must_ be of the same length.
+
+###### Auto-detecting FASTQS from a Path Prefix
+
+Alternatively, the FASTQS can be auto-detected when a path prefix is given to `--fastqs <dir>/<prefix>`.
+The FASTQs must be named `<dir>/<prefix>_L00<lane>_<kind><kind-number>_001.fastq.gz`, where `kind` is
+one of R (read/template), I (index/sample barcode), or U (umi/molecular barcode). 
+
+If the read structure is given on the command line or Sample sheet, the segments are assumed to to
+apply to I1 R1 R2 I2 reads in that order.  Otherwise, the read structure will be `B+ T+ T+ B+` 
+(all index bases are used for the sample barcode, all read bases are assumed to be template).
 
 ##### Read Structures
 

@@ -78,7 +78,7 @@ For support please contact: care@singulargenomics.com
 #[derive(Parser, Debug, Clone)]
 #[clap(name = TOOL_NAME, version = built_info::VERSION.as_str(), about=SHORT_USAGE, long_about=LONG_USAGE, term_width=0)]
 pub struct Opts {
-    /// Path to the input FASTQs.
+    /// Path to the input FASTQs or path prefix.
     #[clap(long, short = 'f', display_order = 1, required = true, multiple_values = true)]
     pub fastqs: Vec<PathBuf>,
 
