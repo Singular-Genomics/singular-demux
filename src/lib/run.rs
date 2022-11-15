@@ -293,8 +293,8 @@ mod test {
         fastq_header::FastqHeader,
         matcher::{MatcherKind, UNDETERMINED_NAME},
         metrics::{BarcodeCount, RunMetrics, SampleMetricsProcessed},
-        sample_metadata::{self, SampleMetadata},
-        sample_sheet::SampleSheet,
+        sample_metadata::SampleMetadata,
+        sample_sheet::{SampleSheet, SampleSheetError},
         utils::{
             filename,
             test_commons::{
@@ -350,15 +350,11 @@ mod test {
             ..Opts::default()
         };
 
-        let samples = sample_metadata::from_path(
-            metadata,
-            Some(opts.allowed_mismatches),
-            &opts.undetermined_sample_name,
-        )
-        .unwrap();
-        run(opts).unwrap();
+        let sample_sheet = SampleSheet::from_path(opts).unwrap();
 
-        let fastq = output.join(filename(&samples[0], &SegmentType::Template, 1));
+        run(sample_sheet.opts).unwrap();
+
+        let fastq = output.join(filename(&sample_sheet.samples[0], &SegmentType::Template, 1));
         slurp_fastq(&fastq)
     }
 
@@ -535,10 +531,9 @@ mod test {
         run(sample_sheet.opts).unwrap();
 
         // Check outputs
-
-        for sample in sample_sheet.samples.iter().map(|s| &s.sample_id) {
+        for sample in &sample_sheet.samples {
             for kind in &output_types_to_write {
-                let fastq = output.join(filename(&sample, &kind, 1));
+                let fastq = output.join(filename(sample, kind, 1));
                 let records = slurp_fastq(&fastq);
                 let (names, barcodes) = names_and_barcodes(&records);
 
@@ -752,7 +747,7 @@ mod test {
         let metadata = dir.path().join("sample_metadata.csv");
         let sample =
             SampleMetadata::new(String::from("foo"), b"TCGT".as_slice().into(), 0, 2).unwrap();
-        let sample_result: Result<SampleMetadata, SampleMetadataError> = Ok(sample.clone());
+        let sample_result: Result<SampleMetadata, SampleSheetError> = Ok(sample.clone());
         delim.write_csv(&metadata, sample_result).unwrap();
 
         let opts = Opts {
@@ -1121,15 +1116,11 @@ mod test {
             ..Opts::default()
         };
 
-        let samples = sample_metadata::from_path(
-            metadata_path,
-            Some(opts.allowed_mismatches),
-            &opts.undetermined_sample_name,
-        )
-        .unwrap();
+        let sample_sheet = SampleSheet::from_path(opts).unwrap();
+        let samples = sample_sheet.samples;
 
         // Run the tool and then read back the data for s1
-        run(opts).unwrap();
+        run(sample_sheet.opts).unwrap();
 
         let s1_recs =
             slurp_fastq(&output_path.join(filename(&samples[0], &SegmentType::Template, 1)));
@@ -1176,17 +1167,15 @@ mod test {
         };
 
         // Run the tool and then read back the data for s1
-        let samples = sample_metadata::from_path(
-            metadata_path,
-            Some(opts.allowed_mismatches),
-            &opts.undetermined_sample_name,
-        )
-        .unwrap();
-        let undetermined_id = opts.undetermined_sample_name.clone();
-        run(opts).unwrap();
+        let sample_sheet = SampleSheet::from_path(opts).unwrap();
+        let undetermined_id = sample_sheet.opts.undetermined_sample_name.clone();
+        run(sample_sheet.opts).unwrap();
 
-        let s1_recs =
-            slurp_fastq(&output_path.join(filename(&samples[0], &SegmentType::Template, 1)));
+        let s1_recs = slurp_fastq(&output_path.join(filename(
+            &sample_sheet.samples[0],
+            &SegmentType::Template,
+            1,
+        )));
 
         assert_eq!(s1_recs.len(), 3);
         for (idx, rec) in s1_recs.iter().enumerate() {
@@ -1259,13 +1248,9 @@ mod test {
             ..Opts::default()
         };
 
-        let samples = sample_metadata::from_path(
-            metadata,
-            Some(opts.allowed_mismatches),
-            &opts.undetermined_sample_name,
-        )
-        .unwrap();
-        run(opts).unwrap();
+        let sample_sheet = SampleSheet::from_path(opts).unwrap();
+        let samples = sample_sheet.samples;
+        run(sample_sheet.opts).unwrap();
 
         // Check the undetermined sample got no reads
         let un_recs = slurp_fastq(&output.join(filename(&samples[1], &SegmentType::Template, 1)));
