@@ -114,7 +114,7 @@ pub fn run(opts: Opts) -> Result<()> {
         opts.read_structures
             .iter()
             .all(|s| s.sample_barcodes().all(read_structure::ReadSegment::has_length)),
-        "The Read Structure must have sample barcode segments with fixed lengths"
+        "Sample barcode segments in read structures must have fixed lengths."
     );
     ensure!(
         is_no_demux
