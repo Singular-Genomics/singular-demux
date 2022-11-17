@@ -1,4 +1,4 @@
-use std::{fs::File, io::BufWriter, sync::Arc, vec::Vec};
+use std::{fs::File, io::BufWriter, path::PathBuf, sync::Arc, vec::Vec};
 
 use anyhow::{bail, ensure, Context, Result};
 use gzp::BUFSIZE;
@@ -35,20 +35,39 @@ pub fn run(opts: Opts) -> Result<(), anyhow::Error> {
     // and so all accepted records will go into file(s) for one sample with no Undetermined
     let is_no_demux = samples.len() == 1 && samples[0].barcode.len() == 0;
 
-    // If a path prefix is given as the single argument to --fastqs then auto-detect all the FASTQs
-    // with that path prefix.  Also, if the read-structures is not given, build it from the auto-
-    // detected
-    let opts = if opts.fastqs.len() == 1 && !opts.fastqs[0].is_file() {
-        let input_fastqs: Vec<InputFastq> = InputFastq::slurp(opts.fastqs[0].clone());
-        let fastqs = input_fastqs.iter().map(|f| f.path.clone()).collect();
-        let read_structures: Vec<ReadStructure> = if opts.read_structures.is_empty() {
-            input_fastqs.iter().map(InputFastq::read_structure).collect::<Vec<ReadStructure>>()
-        } else {
-            opts.read_structures
-        };
+    // If the input FASTQs are in fact path prefixes, then slurp in the FASTQs and create the
+    // read structure based on the kind/kind-number inferred from the file name.
+    let opts = if opts.fastqs.iter().all(|f| f.is_file()) {
+        // do nothing
+        opts
+    } else if opts.fastqs.iter().all(|f| !f.is_file()) {
+        ensure!(
+            opts.read_structures.is_empty(),
+            "Read Structure must not be given when the input FASTQs are a path prefix."
+        );
+
+        // slurp in all the FASTQs
+        // Important: sort by kind then kind number so the output kind number is ordered correctly
+        let input_fastqs: Vec<InputFastq> = opts
+            .fastqs
+            .iter()
+            .flat_map(|prefix| InputFastq::slurp(prefix.clone()))
+            .sorted_by(|left, right| {
+                left.kind.cmp(&right.kind).then(left.kind_number.cmp(&right.kind_number))
+            })
+            .collect();
+
+        // build read structures, one per input FASTQ
+        let read_structures: Vec<ReadStructure> =
+            input_fastqs.iter().map(InputFastq::read_structure).collect();
+
+        // extract the list of input FASTQs
+        let fastqs: Vec<PathBuf> =
+            input_fastqs.iter().map(|input_fastq| input_fastq.path.clone()).collect();
+
         Opts { fastqs, read_structures, ..opts }
     } else {
-        opts
+        bail!("Input FASTQS (--fastqs) must either all be files or all path prefixes, not a mixture of both")
     };
 
     // Important: this must be created **after** updating the number of read structures
@@ -91,6 +110,12 @@ pub fn run(opts: Opts) -> Result<(), anyhow::Error> {
 
     // All sample barcode read segments should now have a fixed length, so check the sum of their
     // lengths with the sum of length of the sample barcode(s) in the sample sheet.
+    ensure!(
+        opts.read_structures
+            .iter()
+            .all(|s| s.sample_barcodes().all(read_structure::ReadSegment::has_length)),
+        "The Read Structure must have sample barcode segments with fixed lengths"
+    );
     ensure!(
         is_no_demux
             || opts
@@ -562,7 +587,6 @@ mod test {
     fn test_end_to_end_simple(
         #[values(1, 2)] threads: usize,
         #[values("T", "B", "TB")] output_types: String,
-        #[values(true, false)] use_path_prefix: bool,
     ) {
         let dir = tempfile::tempdir().unwrap();
         let read_structure = ReadStructure::from_str("17B100T").unwrap();
@@ -571,10 +595,9 @@ mod test {
         create_dir(&output).unwrap();
 
         let metadata = create_preset_sample_metadata_file(&dir.path());
-        let fastqs: PathBuf = if use_path_prefix { dir.path().to_path_buf() } else { input };
 
         let opts = Opts {
-            fastqs: vec![fastqs],
+            fastqs: vec![input],
             output_dir: output.clone(),
             sample_metadata: metadata,
             read_structures: vec![read_structure],
@@ -886,7 +909,6 @@ mod test {
     fn test_demux_dual_index_paired_end_reads(
         #[values(1, 2)] threads: usize,
         #[values(true, false)] use_path_prefix: bool,
-        #[values(true, false)] empty_read_structures: bool,
     ) {
         let dir = tempfile::tempdir().unwrap();
         let fq1_path = dir.path().join(fastq_file_name("test", 1, SegmentType::SampleBarcode, 1));
@@ -918,7 +940,7 @@ mod test {
             &fq4_path,
         );
 
-        let read_structures = if use_path_prefix && empty_read_structures {
+        let read_structures = if use_path_prefix {
             vec![]
         } else {
             vec![

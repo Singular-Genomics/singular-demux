@@ -127,21 +127,30 @@ for read in R1 R2 I1 I2; do cat L*/${read}.fastq.gz > ./${read}.fastq.gz; done
 
 FASTQ files _must_ be BGZF compressed.
 
-All reads containing sample barcodes/indexes _must_ be of the same length.
-
 ###### Auto-detecting FASTQS from a Path Prefix
 
 Alternatively, the FASTQS can be auto-detected when a path prefix is given to `--fastqs <dir>/<prefix>`.
 The FASTQs must be named `<dir>/<prefix>_L00<lane>_<kind><kind-number>_001.fastq.gz`, where `kind` is
 one of R (read/template), I (index/sample barcode), or U (umi/molecular barcode). 
 
-If the read structure is given on the command line or Sample sheet, the segments are assumed to to
-apply to I1 R1 R2 I2 reads in that order.  Otherwise, the read structure will be `B+ T+ T+ B+` 
-(all index bases are used for the sample barcode, all read bases are assumed to be template).
+The Read Structure must not be given on the the command line or Sample Sheet.  Instead, the Read 
+Structure will be derived file names (kind and kind number), with the full read length used for the given kind.
+E.g. if the following FASTQs are present with path prefix `/path/to/prefix`:
+
+```
+/path/to/prefix_L001_I1_001.fasztq.gz
+/path/to/prefix_L001_R1_001.fasztq.gz
+/path/to/prefix_L001_R2_001.fasztq.gz
+/path/to/prefix_L001_I2_001.fasztq.gz
+```
+
+then the `+B +T +T +B` read structure will be used.  Since this tool requires all sample barcode
+segments to have a fixed length, the first read in any index/sample-barcode FASTQ will be examined
+and its length used as the expected sample barcode length.
 
 ##### Read Structures
 
-Read Structures are short strings that describe the origin and/or purpose of bases within sequencing reads.  They are made up of a sequence of `<number><operator>` pairs.  Four kinds of operators are recognized:
+Read Structures are short strings that describe the origin and/or purpose of bases within sequencing reads.  They are made up of a sequence of `<number><operator>` pairs (segments).  Four kinds of operators are recognized:
 
 1. **T** identifies template reads/bases
 2. **B** identifies sample barcode reads/bases
@@ -158,6 +167,8 @@ One Read Structure must be provided for each input FASTQ file, in the same order
 ```shell
   --read-structures +T +T 8B 8B
 ```
+
+All sample barocde segments must be a fixed length.  E.g. `8B+T` is allowed but `10S+B` is not.
 
 ##### Sample Sheet
 

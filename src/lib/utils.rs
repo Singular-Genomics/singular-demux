@@ -18,7 +18,6 @@ use lazy_static::lazy_static;
 use read_structure::{ReadStructure, SegmentType, ANY_LENGTH_STR};
 use regex::Regex;
 use seq_io::{fastq, BaseRecord};
-use std::cmp::Ordering;
 
 lazy_static! {
     /// Return the number of cpus as a String
@@ -248,8 +247,7 @@ impl InputFastq {
     }
 
     /// Identifies all FASTQs that share the common path prefix and match the
-    /// `INPUT_FASTQ_REGEX` pattern.  The path prefix may also be a directory.  The FASTQS are
-    /// returned in sorted order.
+    /// `INPUT_FASTQ_REGEX` pattern.  The path prefix may also be a directory.
     pub fn slurp<P: AsRef<Path>>(path_prefix: P) -> Vec<InputFastq> {
         let (parent, prefix) = if path_prefix.as_ref().is_file() {
             (
@@ -260,7 +258,7 @@ impl InputFastq {
             (path_prefix.as_ref(), "")
         };
 
-        let mut fastqs: Vec<InputFastq> = std::fs::read_dir(parent)
+        std::fs::read_dir(parent)
             .unwrap()
             .map(|res| res.map(|e| e.path()).unwrap())
             .filter(|p| {
@@ -270,112 +268,11 @@ impl InputFastq {
                     && file_name.ends_with(INPUT_FASTQ_SUFFIX)
             })
             .filter_map(InputFastq::new)
-            .collect();
-        fastqs.sort();
-        fastqs
+            .collect()
     }
 
     pub fn read_structure(&self) -> ReadStructure {
         ReadStructure::from_str(&format!("{}{}", ANY_LENGTH_STR, self.kind.value())).unwrap()
-    }
-}
-
-/// Returns a numeric value in priority order for segment types, to aid in ordering input FASTQs.
-///
-/// The main motivation is so when the FASTQs are ordered, that for a dual-index run the FASTQs are
-/// ordered assuming a read structure of `+B +T +T +B`.
-fn kind_to_order_num(kind: SegmentType) -> usize {
-    match kind {
-        SegmentType::SampleBarcode => 0,
-        SegmentType::Skip => 1,
-        SegmentType::MolecularBarcode => 2,
-        SegmentType::Template => 3,
-        kind => panic!("Could not determine kind from {:?}", kind),
-    }
-}
-
-impl Ord for InputFastq {
-    /// Defines a partial ordering based on:
-    /// 1. The FASTQ prefix
-    /// 2. The lane
-    /// 3. The read number (kind number)
-    /// 4. The kind.  If the kind number is odd, orders by sample barcode, skip, molecular barcode,
-    ///    then template.  The opposite order if the kind is even.  This is so if the four FASTQS
-    ///    for I1, R1, R2, I2, they are remain in that order after sorting.
-    ///
-    /// The main motivation is so when the FASTQs are ordered, that for a dual-index run the FASTQs are
-    /// ordered assuming a read structure of `+B +T +T +B`.
-    ///
-    /// Read numbers beyond two are supported, but are non-sensical at this time.
-    fn cmp(&self, other: &Self) -> Ordering {
-        // Prefix
-        let mut res = self.prefix.cmp(&other.prefix);
-        if res.is_ne() {
-            return res;
-        };
-
-        // Lane
-        res = self.lane.cmp(&other.lane);
-        if res.is_ne() {
-            return res;
-        };
-
-        // Kind number
-        res = self.kind_number.cmp(&other.kind_number);
-        if res.is_ne() {
-            return res;
-        };
-
-        // Kind, conditional on kind number
-        res = kind_to_order_num(self.kind).cmp(&kind_to_order_num(other.kind));
-        if self.kind_number % 2 == 0 {
-            res.reverse()
-        } else {
-            res
-        }
-    }
-}
-
-impl PartialOrd for InputFastq {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl PartialEq for InputFastq {
-    fn eq(&self, other: &Self) -> bool {
-        self.cmp(other).is_eq()
-    }
-}
-
-impl Eq for InputFastq {}
-
-/// Infers the read length contained in the given FASTQ by examining the length of the first read.
-pub fn infer_fastq_sequence_length(file: PathBuf) -> Result<usize, anyhow::Error> {
-    let reader = BufReader::with_capacity(
-        BUFSIZE,
-        File::open(&file).with_context(|| format!("Failed to open {}", file.to_string_lossy()))?,
-    );
-
-    let mut reader = fastq::Reader::with_capacity(
-        ParDecompressBuilder::<Bgzf>::new()
-            .num_threads(1)
-            .with_context(|| {
-                format!(
-                    "Error in setting threads when creating decompressor for {}",
-                    file.to_string_lossy()
-                )
-            })?
-            .from_reader(reader),
-        BUFSIZE,
-    );
-
-    match reader.next() {
-        Some(Ok(record)) => Ok(record.seq().len()),
-        _ => Err(anyhow!(
-            "Could determine sample barcode length from empty input FASTQ: {}",
-            file.to_string_lossy()
-        )),
     }
 }
 
@@ -549,6 +446,35 @@ pub mod test_commons {
     }
 }
 
+/// Infers the read length contained in the given FASTQ by examining the length of the first read.
+pub fn infer_fastq_sequence_length(file: PathBuf) -> Result<usize, anyhow::Error> {
+    let reader = BufReader::with_capacity(
+        BUFSIZE,
+        File::open(&file).with_context(|| format!("Failed to open {}", file.to_string_lossy()))?,
+    );
+
+    let mut reader = fastq::Reader::with_capacity(
+        ParDecompressBuilder::<Bgzf>::new()
+            .num_threads(1)
+            .with_context(|| {
+                format!(
+                    "Error in setting threads when creating decompressor for {}",
+                    file.to_string_lossy()
+                )
+            })?
+            .from_reader(reader),
+        BUFSIZE,
+    );
+
+    match reader.next() {
+        Some(Ok(record)) => Ok(record.seq().len()),
+        _ => Err(anyhow!(
+            "Could determine sample barcode length from empty input FASTQ: {}",
+            file.to_string_lossy()
+        )),
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::{
@@ -563,12 +489,15 @@ mod test {
     use gzp::{BgzfSyncWriter, Compression, MgzipSyncWriter};
     use read_structure::{ReadStructure, SegmentType};
 
-    use crate::{sample_metadata::SampleMetadata, utils::filename};
+    use crate::{
+        sample_metadata::SampleMetadata,
+        utils::{filename, infer_fastq_sequence_length},
+    };
     use strum::IntoEnumIterator;
 
-    use crate::utils::{kind_to_order_num, segment_kind_to_fastq_id, INPUT_FASTQ_SUFFIX};
+    use crate::utils::{segment_kind_to_fastq_id, INPUT_FASTQ_SUFFIX};
 
-    use super::{check_bgzf, filenames, infer_fastq_sequence_length, InputFastq, MultiZip};
+    use super::{check_bgzf, filenames, InputFastq, MultiZip};
     use tempfile::tempdir;
 
     #[test]
@@ -747,16 +676,12 @@ mod test {
                         );
                         let path = dir.path().join(name);
                         let fq = InputFastq::new(path.clone()).unwrap();
-                        assert_eq!(
-                            fq,
-                            InputFastq {
-                                path: path.clone(),
-                                prefix: prefix.to_string(),
-                                lane,
-                                kind,
-                                kind_number
-                            }
-                        );
+
+                        assert_eq!(fq.path, path);
+                        assert_eq!(fq.prefix, prefix);
+                        assert_eq!(fq.lane, lane);
+                        assert_eq!(fq.kind, kind);
+                        assert_eq!(fq.kind_number, kind_number);
                         // actually touch the path
                         std::fs::File::create(path.clone()).unwrap();
                         expected_fastqs.push(path);
@@ -776,87 +701,6 @@ mod test {
         for actual_path in actual_paths {
             assert!(expected_fastqs.contains(&actual_path));
         }
-    }
-
-    #[test]
-    fn test_input_fastqs_ordering() {
-        let dir = tempdir().unwrap();
-
-        // different prefix
-        let lower = InputFastq {
-            path: dir.path().to_path_buf(),
-            prefix: "aaa".to_string(),
-            lane: 1,
-            kind: SegmentType::SampleBarcode,
-            kind_number: 1,
-        };
-        let upper =
-            InputFastq { path: dir.path().to_path_buf(), prefix: "aab".to_string(), ..lower };
-        assert!(lower.lt(&upper));
-        assert!(upper.gt(&lower));
-        assert!(lower.eq(&lower));
-
-        // same prefix, different lane
-        let upper = InputFastq {
-            path: dir.path().to_path_buf(),
-            prefix: "aaa".to_string(),
-            lane: 2,
-            ..lower
-        };
-        assert!(lower.lt(&upper));
-        assert!(upper.gt(&lower));
-        assert!(lower.eq(&lower));
-
-        // same prefix and lane, different kind number
-        let upper = InputFastq {
-            path: dir.path().to_path_buf(),
-            prefix: "aaa".to_string(),
-            kind_number: 2,
-            ..lower
-        };
-        assert!(lower.lt(&upper));
-        assert!(upper.gt(&lower));
-        assert!(lower.eq(&lower));
-
-        // same prefix, lane, and kind number (odd), but different kind
-        // For read 1, we have SampelBarcode < Skip < MolecularBarcode < Template
-        let upper = InputFastq {
-            path: dir.path().to_path_buf(),
-            prefix: "aaa".to_string(),
-            kind: SegmentType::Template,
-            ..lower
-        };
-        assert!(lower.lt(&upper));
-        assert!(upper.gt(&lower));
-        assert!(lower.eq(&lower));
-
-        // same prefix, lane, and kind number (even), but different kind
-        // For read 2, we have SampelBarcode > Skip > MolecularBarcode > Template
-        let upper = InputFastq {
-            path: dir.path().to_path_buf(),
-            prefix: "aaa".to_string(),
-            kind_number: 2,
-            kind: SegmentType::SampleBarcode,
-            ..lower
-        };
-        let lower = InputFastq {
-            path: dir.path().to_path_buf(),
-            prefix: "aaa".to_string(),
-            kind: SegmentType::Template,
-            ..upper
-        };
-        assert!(lower.lt(&upper));
-        assert!(upper.gt(&lower));
-        assert!(lower.eq(&lower));
-    }
-
-    #[test]
-    fn test_kind_to_order_num() {
-        // check regression
-        assert_eq!(kind_to_order_num(SegmentType::SampleBarcode), 0);
-        assert_eq!(kind_to_order_num(SegmentType::Skip), 1);
-        assert_eq!(kind_to_order_num(SegmentType::MolecularBarcode), 2);
-        assert_eq!(kind_to_order_num(SegmentType::Template), 3);
     }
 
     #[test]
