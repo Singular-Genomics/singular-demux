@@ -203,6 +203,20 @@ lazy_static! {
     static ref INPUT_FASTQ_REGEX: Regex = Regex::new(r"^(.*)_L00(\d)_([RIUS])(\d)_001.fastq.gz$").unwrap();
 }
 
+// Returns the character associated with the given `SegmentType` that should be used in a FASTQ file
+// name.
+pub fn segment_type_to_fastq_kind(segment_type: &SegmentType) -> char {
+    match segment_type {
+        SegmentType::Template => 'R',
+        SegmentType::SampleBarcode => 'I',
+        SegmentType::MolecularBarcode => 'U',
+        SegmentType::Skip => 'S',
+        knd => {
+            panic!("Unreachable - segment_type should enforce only [TSMB], found {}", knd.value())
+        }
+    }
+}
+
 /// Contains information about a FASTQ that has been inferred from the file name.  This includes
 /// lane, segment type (e.g. template/read, sample barcode/index, molecular barcode/index, and
 /// skip bases), and segment number (e.g. R1 or R2).

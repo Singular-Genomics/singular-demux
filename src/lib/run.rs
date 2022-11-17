@@ -17,7 +17,7 @@ use crate::{
     pooled_sample_writer::PooledSampleWriter,
     sample_sheet::{self},
     thread_reader::ThreadReader,
-    utils::{check_bgzf, filenames, InputFastq, MultiZip},
+    utils::{check_bgzf, filenames, segment_type_to_fastq_kind, InputFastq, MultiZip},
 };
 
 /// Run demultiplexing.
@@ -56,6 +56,18 @@ pub fn run(opts: Opts) -> Result<()> {
                 left.kind.cmp(&right.kind).then(left.kind_number.cmp(&right.kind_number))
             })
             .collect();
+
+        // Should only find one FASTQ with the same kind and kind number
+        for ((kind, kind_number), fastqs) in
+            &input_fastqs.iter().group_by(|f| (f.kind, f.kind_number))
+        {
+            ensure!(
+                fastqs.count() == 1,
+                "Found multiple FASTQS with the same kind and kind number ({}{})",
+                segment_type_to_fastq_kind(&kind),
+                kind_number
+            );
+        }
 
         // build read structures, one per input FASTQ
         let read_structures: Vec<ReadStructure> =
