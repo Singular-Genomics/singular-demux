@@ -22,7 +22,7 @@ use crate::{
 
 /// Run demultiplexing.
 #[allow(clippy::too_many_lines)]
-pub fn run(opts: Opts) -> Result<(), anyhow::Error> {
+pub fn run(opts: Opts) -> Result<()> {
     eprint!("{}", LOGO);
 
     let output_types_to_write = opts.output_types_to_write()?;
@@ -35,7 +35,7 @@ pub fn run(opts: Opts) -> Result<(), anyhow::Error> {
     // and so all accepted records will go into file(s) for one sample with no Undetermined
     let is_no_demux = samples.len() == 1 && samples[0].barcode.len() == 0;
 
-    // If the input FASTQs are in fact path prefixes, then slurp in the FASTQs and create the
+    // If the input FASTQs are in fact path prefixes, then glob in the FASTQs and create the
     // read structure based on the kind/kind-number inferred from the file name.
     let opts = if opts.fastqs.iter().all(|f| f.is_file()) {
         // do nothing
@@ -46,12 +46,12 @@ pub fn run(opts: Opts) -> Result<(), anyhow::Error> {
             "Read Structure must not be given when the input FASTQs are a path prefix."
         );
 
-        // slurp in all the FASTQs
+        // glob all the FASTQs
         // Important: sort by kind then kind number so the output kind number is ordered correctly
         let input_fastqs: Vec<InputFastq> = opts
             .fastqs
             .iter()
-            .flat_map(|prefix| InputFastq::slurp(prefix.clone()))
+            .flat_map(|prefix| InputFastq::glob(&prefix).unwrap())
             .sorted_by(|left, right| {
                 left.kind.cmp(&right.kind).then(left.kind_number.cmp(&right.kind_number))
             })
@@ -69,6 +69,11 @@ pub fn run(opts: Opts) -> Result<(), anyhow::Error> {
     } else {
         bail!("Input FASTQS (--fastqs) must either all be files or all path prefixes, not a mixture of both")
     };
+
+    // If there is a read structure that's all sample barcode, we need to replace it with the
+    // expected length to enable index hopping metrics.  Do so by inspecting the first read in the
+    // corresponding FASTQ
+    let opts = opts.with_fixed_sample_barcodes()?;
 
     // Important: this must be created **after** updating the number of read structures
     let read_filter_config = opts.as_read_filter_config();
@@ -102,11 +107,6 @@ pub fn run(opts: Opts) -> Result<(), anyhow::Error> {
         samples.iter().all(|s| s.barcode.len() == samples[0].barcode.len()),
         "Sample metadata barcodes are unequal lengths."
     );
-
-    // If there is a read structure that's all sample barcode, we need to replace it with the
-    // expected length to enable index hopping metrics.  Do so by inspecting the first read in the
-    // corresponding FASTQ
-    let opts = opts.with_fixed_sample_barcodes()?;
 
     // All sample barcode read segments should now have a fixed length, so check the sum of their
     // lengths with the sum of length of the sample barcode(s) in the sample sheet.

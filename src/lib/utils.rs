@@ -8,13 +8,12 @@ use std::{
 
 use crate::sample_metadata::SampleMetadata;
 use ahash::AHashMap;
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, Context, Result};
 use core::fmt::Display;
-use gzp::{
-    deflate::Bgzf, par::decompress::ParDecompressBuilder, BlockFormatSpec, GzpError, BUFSIZE,
-};
+use gzp::{deflate::Bgzf, BgzfSyncReader, BlockFormatSpec, GzpError, BUFSIZE};
 use itertools::Itertools;
 use lazy_static::lazy_static;
+use path_absolutize::*;
 use read_structure::{ReadStructure, SegmentType, ANY_LENGTH_STR};
 use regex::Regex;
 use seq_io::{fastq, BaseRecord};
@@ -133,7 +132,7 @@ where
 }
 
 /// Checks if the file is a BGZF file
-pub fn check_bgzf(file: &Path) -> Result<(), anyhow::Error> {
+pub fn check_bgzf(file: &Path) -> Result<()> {
     let mut reader = match File::open(&file) {
         Ok(f) => BufReader::with_capacity(BUFSIZE, f),
         Err(error) => {
@@ -167,7 +166,7 @@ pub fn check_bgzf(file: &Path) -> Result<(), anyhow::Error> {
 }
 
 /// Creates an error message when the file does not look like a BGZF file.
-fn report_bgzf_error<C>(file: &Path, context: C, is_gzip: bool) -> Result<(), anyhow::Error>
+fn report_bgzf_error<C>(file: &Path, context: C, is_gzip: bool) -> Result<()>
 where
     C: Display + Send + Sync + 'static,
 {
@@ -201,7 +200,7 @@ pub static INPUT_FASTQ_SUFFIX: &str = "_001.fastq.gz";
 
 lazy_static! {
     /// <*>_L00#_<R# or I#>_001.fastq.gz
-    static ref INPUT_FASTQ_REGEX: Regex = Regex::new(r"^(.*)_L00(\d{1})_([RIUS])(\d{1})_001.fastq.gz$").unwrap();
+    static ref INPUT_FASTQ_REGEX: Regex = Regex::new(r"^(.*)_L00(\d)_([RIUS])(\d)_001.fastq.gz$").unwrap();
 }
 
 /// Contains information about a FASTQ that has been inferred from the file name.  This includes
@@ -213,17 +212,22 @@ pub struct InputFastq {
     pub prefix: String,
     pub lane: usize,
     pub kind: SegmentType,
-    pub kind_number: i32,
+    pub kind_number: u32,
 }
 
 impl InputFastq {
-    /// Create a new `InputFastq` inferring information from the file name.  This must match the
-    /// `INPUT_FASTQ_REGEX` pattern.
+    /// Create a new `InputFastq` inferring information from the file name if hte file name matches
+    /// the `INPUT_FASTQ_REGEX` pattern, `None` otherwise.
     pub fn new<P: AsRef<Path>>(path: P) -> Option<InputFastq> {
         let file_name = path.as_ref().file_name().unwrap().to_string_lossy();
         match INPUT_FASTQ_REGEX.captures(&file_name) {
             None => None,
             Some(captures) => {
+                // Developer notes:
+                // - unwrap on .get([1234]) is safe since the regex pattern is known/fixed,
+                //   so we if it matches we know the number of capture groups
+                // - unwrap on parsing the lane as a string (to `usize`) is safe because the regex
+                //   only allows digits, so it should always succeeds.  Similarly the kind number.
                 let prefix = captures.get(1).unwrap().as_str().to_string();
                 let lane = captures.get(2).unwrap().as_str().parse::<usize>().unwrap();
                 let kind: SegmentType = match captures.get(3).unwrap().as_str() {
@@ -231,9 +235,9 @@ impl InputFastq {
                     "I" => SegmentType::SampleBarcode,
                     "U" => SegmentType::MolecularBarcode,
                     "S" => SegmentType::Skip,
-                    knd => panic!("Could not determine kind from {}", knd),
+                    knd => panic!("Unreachable - regex should enforce only [RIUS], found {}", knd),
                 };
-                let kind_number = captures.get(4).unwrap().as_str().parse::<i32>().unwrap();
+                let kind_number = captures.get(4).unwrap().as_str().parse::<u32>().unwrap();
 
                 Some(InputFastq {
                     path: path.as_ref().to_path_buf(),
@@ -248,18 +252,19 @@ impl InputFastq {
 
     /// Identifies all FASTQs that share the common path prefix and match the
     /// `INPUT_FASTQ_REGEX` pattern.  The path prefix may also be a directory.
-    pub fn slurp<P: AsRef<Path>>(path_prefix: P) -> Vec<InputFastq> {
-        let (parent, prefix) = if path_prefix.as_ref().is_file() {
-            (
-                path_prefix.as_ref().parent().unwrap(),
-                path_prefix.as_ref().file_name().unwrap().to_str().unwrap(),
-            )
-        } else {
+    pub fn glob<P: AsRef<Path>>(path_prefix: &P) -> Result<Vec<InputFastq>> {
+        // Get the absoulte path, even if it doesn't (yet) exist
+        let abs_path_prefix = path_prefix.as_ref().absolutize()?;
+        let (parent, prefix) = if path_prefix.as_ref().is_dir() {
             (path_prefix.as_ref(), "")
+        } else {
+            (
+                abs_path_prefix.as_ref().parent().unwrap(),
+                abs_path_prefix.file_name().unwrap().to_str().unwrap(),
+            )
         };
 
-        std::fs::read_dir(parent)
-            .unwrap()
+        let fastqs = std::fs::read_dir(parent)?
             .map(|res| res.map(|e| e.path()).unwrap())
             .filter(|p| {
                 let file_name = p.file_name().unwrap().to_str().unwrap();
@@ -268,7 +273,8 @@ impl InputFastq {
                     && file_name.ends_with(INPUT_FASTQ_SUFFIX)
             })
             .filter_map(InputFastq::new)
-            .collect()
+            .collect();
+        Ok(fastqs)
     }
 
     pub fn read_structure(&self) -> ReadStructure {
@@ -447,30 +453,20 @@ pub mod test_commons {
 }
 
 /// Infers the read length contained in the given FASTQ by examining the length of the first read.
-pub fn infer_fastq_sequence_length(file: PathBuf) -> Result<usize, anyhow::Error> {
+pub fn infer_fastq_sequence_length<P: AsRef<Path>>(file: &P) -> Result<usize> {
     let reader = BufReader::with_capacity(
         BUFSIZE,
-        File::open(&file).with_context(|| format!("Failed to open {}", file.to_string_lossy()))?,
+        File::open(&file)
+            .with_context(|| format!("Failed to open {}", file.as_ref().to_string_lossy()))?,
     );
 
-    let mut reader = fastq::Reader::with_capacity(
-        ParDecompressBuilder::<Bgzf>::new()
-            .num_threads(1)
-            .with_context(|| {
-                format!(
-                    "Error in setting threads when creating decompressor for {}",
-                    file.to_string_lossy()
-                )
-            })?
-            .from_reader(reader),
-        BUFSIZE,
-    );
+    let mut reader = fastq::Reader::with_capacity(BgzfSyncReader::new(reader), BUFSIZE);
 
     match reader.next() {
         Some(Ok(record)) => Ok(record.seq().len()),
         _ => Err(anyhow!(
             "Could determine sample barcode length from empty input FASTQ: {}",
-            file.to_string_lossy()
+            file.as_ref().to_string_lossy()
         )),
     }
 }
@@ -692,7 +688,7 @@ mod test {
 
         // list the FASTQs from the directory
         let actual_paths: Vec<PathBuf> =
-            InputFastq::slurp(dir.path()).iter().map(|p| p.path.clone()).collect();
+            InputFastq::glob(&dir.into_path()).unwrap().iter().map(|p| p.path.clone()).collect();
         // check that all the expected FASTQs were found
         for expected_fastq in &expected_fastqs {
             assert!(actual_paths.contains(expected_fastq));
@@ -717,6 +713,6 @@ mod test {
         drop(gz_writer);
 
         // infers from the first read if only one read
-        assert_eq!(infer_fastq_sequence_length(file).unwrap(), 7);
+        assert_eq!(infer_fastq_sequence_length(&file).unwrap(), 7);
     }
 }

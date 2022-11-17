@@ -78,7 +78,7 @@ For support please contact: care@singulargenomics.com
 #[derive(Parser, Debug, Clone)]
 #[clap(name = TOOL_NAME, version = built_info::VERSION.as_str(), about=SHORT_USAGE, long_about=LONG_USAGE, term_width=0)]
 pub struct Opts {
-    /// Path to the input FASTQs or path prefix.
+    /// Path to the input FASTQs, or path prefix if not a file.
     #[clap(long, short = 'f', display_order = 1, required = true, multiple_values = true)]
     pub fastqs: Vec<PathBuf>,
 
@@ -86,7 +86,7 @@ pub struct Opts {
     #[structopt(long, short = 's', display_order = 2)]
     pub sample_metadata: PathBuf,
 
-    /// Read structures, one per input FASTQ.
+    /// Read structures, one per input FASTQ. Do not provide when using a path prefix for FASTQs.
     #[clap(long, short = 'r', display_order = 3, required = true, multiple_values = true)]
     pub read_structures: Vec<ReadStructure>,
 
@@ -279,7 +279,7 @@ impl Opts {
                 } else {
                     // Get the read length from the FASTQ, subtract all non variable length
                     // segments (must be a sample barcode if we've gone this far).
-                    let read_length: usize = infer_fastq_sequence_length(fastq.clone())?;
+                    let read_length: usize = infer_fastq_sequence_length(&fastq)?;
                     let fixed_length: usize =
                         read_structure.iter().map(|s| s.length().unwrap_or(0)).sum();
 
@@ -427,7 +427,6 @@ mod test {
             let data = format!("@NAME\n{}\n+\n{}\n", bases, quals);
             gz_writer.write_all(data.as_bytes()).unwrap();
             gz_writer.flush().unwrap();
-            drop(gz_writer);
         }
 
         // Create the opt, and update it
