@@ -373,7 +373,7 @@ pub fn infer_fastq_sequence_length(file: PathBuf) -> Result<usize, anyhow::Error
     match reader.next() {
         Some(Ok(record)) => Ok(record.seq().len()),
         _ => Err(anyhow!(
-            "Could determine sample barcode length from input FASTQ: {}",
+            "Could determine sample barcode length from empty input FASTQ: {}",
             file.to_string_lossy()
         )),
     }

@@ -90,7 +90,7 @@ pub struct Opts {
     #[clap(long, short = 'r', display_order = 3, required = true, multiple_values = true)]
     pub read_structures: Vec<ReadStructure>,
 
-    /// The directory to write outputs.
+    /// The directory to write outputs to.
     ///
     /// This tool will overwrite existing files.
     #[clap(long, short, display_order = 4)]

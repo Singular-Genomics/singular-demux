@@ -487,7 +487,7 @@ mod test {
         }
     }
 
-    /// Creates the properly formatted FASZTQ file name to allow auto-detecting lane, kind, and
+    /// Creates the properly formatted FASTQ file name to allow auto-detecting lane, kind, and
     /// kind number from the file name.
     fn fastq_file_name(prefix: &str, lane: usize, kind: SegmentType, kind_number: usize) -> String {
         format!(
