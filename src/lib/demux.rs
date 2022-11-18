@@ -459,7 +459,6 @@ where
             let (concat, delim) = sample_barcode.into_inner();
 
             // Determine which sample (if any) this barcode belongs to
-
             let match_result = match self.read_filter_config.max_no_calls {
                 Some(max_no_calls) if num_no_calls > max_no_calls => {
                     MatchResult::NoMatch { barcode: concat }

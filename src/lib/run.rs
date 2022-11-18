@@ -1,4 +1,4 @@
-use std::{fs::File, io::BufWriter, path::PathBuf, sync::Arc, vec::Vec};
+use std::{fs::File, io::BufWriter, sync::Arc, vec::Vec};
 
 use anyhow::{bail, ensure, Context, Result};
 use gzp::BUFSIZE;
@@ -7,17 +7,16 @@ use log::{debug, info};
 use parking_lot::Mutex;
 use pooled_writer::{bgzf::BgzfCompressor, Pool};
 use rayon::prelude::*;
-use read_structure::ReadStructure;
 
 use crate::{
     demux::{Demultiplex, Demultiplexer, DemuxedGroup, PerFastqRecordSet},
     matcher::{CachedHammingDistanceMatcher, MatcherKind, PreComputeMatcher},
     metrics::{DemuxedGroupMetrics, UnmatchedCounterThread},
-    opts::{Opts, LOGO},
+    opts::{FastqsAndReadStructure, Opts, LOGO},
     pooled_sample_writer::PooledSampleWriter,
     sample_sheet::{self},
     thread_reader::ThreadReader,
-    utils::{check_bgzf, filenames, segment_type_to_fastq_kind, InputFastq, MultiZip},
+    utils::{check_bgzf, filenames, MultiZip},
 };
 
 /// Run demultiplexing.
@@ -28,64 +27,24 @@ pub fn run(opts: Opts) -> Result<()> {
     let output_types_to_write = opts.output_types_to_write()?;
     let sample_sheet = sample_sheet::SampleSheet::from_path(opts)?;
     let samples = sample_sheet.samples;
-    let opts = sample_sheet.opts;
+    let mut opts = sample_sheet.opts;
+
+    // Organize the FASTQ and read structure depending on the values of both opts.fastqs and
+    // opts.read_structures.  If both arguments are given, then nothing really needs to be done.
+    // But if opts.fastqs is a path prefix(es), then the kind/kind_number/lane is inferred from
+    // each FASTQ that shares the given path prefix, and we need to group reads based on kind and
+    // kind number to support serially processing multiple lanes.
+    //
+    // IMPORTANT: opts.fastqs should no longer be used past this point
+    let input_fastq_groups: Vec<FastqsAndReadStructure> =
+        Opts::from(opts.fastqs, opts.read_structures)?;
+    opts.read_structures = input_fastq_groups.iter().map(|g| g.read_structure.clone()).collect();
+    opts.fastqs = vec![]; // so we don't use it later incorrectly
 
     // If there is only a single sample in the metadata and that sample has no barcode
     // specified the tool is being run to filter/mask/etc. _without_ demultiplexing
     // and so all accepted records will go into file(s) for one sample with no Undetermined
     let is_no_demux = samples.len() == 1 && samples[0].barcode.len() == 0;
-
-    // If the input FASTQs are in fact path prefixes, then glob in the FASTQs and create the
-    // read structure based on the kind/kind-number inferred from the file name.
-    let opts = if opts.fastqs.iter().all(|f| f.is_file()) {
-        // do nothing
-        opts
-    } else if opts.fastqs.iter().all(|f| !f.is_file()) {
-        ensure!(
-            opts.read_structures.is_empty(),
-            "Read Structure must not be given when the input FASTQs are a path prefix."
-        );
-
-        // glob all the FASTQs
-        // Important: sort by kind then kind number so the output kind number is ordered correctly
-        let input_fastqs: Vec<InputFastq> = opts
-            .fastqs
-            .iter()
-            .flat_map(|prefix| InputFastq::glob(&prefix).unwrap())
-            .sorted_by(|left, right| {
-                left.kind.cmp(&right.kind).then(left.kind_number.cmp(&right.kind_number))
-            })
-            .collect();
-
-        // Should only find one FASTQ with the same kind and kind number
-        for ((kind, kind_number), fastqs) in
-            &input_fastqs.iter().group_by(|f| (f.kind, f.kind_number))
-        {
-            ensure!(
-                fastqs.count() == 1,
-                "Found multiple FASTQS with the same kind and kind number ({}{})",
-                segment_type_to_fastq_kind(&kind),
-                kind_number
-            );
-        }
-
-        // build read structures, one per input FASTQ
-        let read_structures: Vec<ReadStructure> =
-            input_fastqs.iter().map(InputFastq::read_structure).collect();
-
-        // extract the list of input FASTQs
-        let fastqs: Vec<PathBuf> =
-            input_fastqs.iter().map(|input_fastq| input_fastq.path.clone()).collect();
-
-        Opts { fastqs, read_structures, ..opts }
-    } else {
-        bail!("Input FASTQS (--fastqs) must either all be files or all path prefixes, not a mixture of both")
-    };
-
-    // If there is a read structure that's all sample barcode, we need to replace it with the
-    // expected length to enable index hopping metrics.  Do so by inspecting the first read in the
-    // corresponding FASTQ
-    let opts = opts.with_fixed_sample_barcodes()?;
 
     // Important: this must be created **after** updating the number of read structures
     let read_filter_config = opts.as_read_filter_config();
@@ -106,7 +65,7 @@ pub fn run(opts: Opts) -> Result<()> {
         "No templates found in read structures"
     );
     ensure!(
-        opts.fastqs.len() == opts.read_structures.len(),
+        input_fastq_groups.len() == opts.read_structures.len(),
         "Same number of read structures should be given as FASTQs"
     );
     ensure!(
@@ -140,7 +99,7 @@ pub fn run(opts: Opts) -> Result<()> {
     );
 
     // Check that the input FASTQs are in BGZF format
-    for fastq in &opts.fastqs {
+    for fastq in input_fastq_groups.iter().flat_map(|g| g.fastqs.iter()) {
         check_bgzf(fastq)?;
     }
 
@@ -187,14 +146,18 @@ pub fn run(opts: Opts) -> Result<()> {
     }
 
     info!("Creating reader threads");
-    let mut readers = opts
-        .fastqs
+    let mut readers = input_fastq_groups
         .iter()
-        .map(|f| {
-            ThreadReader::new(f.clone(), opts.chunksize, opts.decompression_threads_per_reader)
+        .map(|g| {
+            ThreadReader::new(
+                g.fastqs.clone(),
+                opts.chunksize,
+                opts.decompression_threads_per_reader,
+            )
         })
         .collect::<Vec<_>>();
-    let rpool = rayon::ThreadPoolBuilder::new().num_threads(opts.demux_threads).build().unwrap();
+    let readers_pool =
+        rayon::ThreadPoolBuilder::new().num_threads(opts.demux_threads).build().unwrap();
 
     let unmatched_counter = if opts.most_unmatched_to_output > 0 {
         Some(UnmatchedCounterThread::new(
@@ -245,7 +208,7 @@ pub fn run(opts: Opts) -> Result<()> {
         Box::new(demuxer)
     };
 
-    let metrics: Result<DemuxedGroupMetrics> = rpool.install(|| {
+    let metrics: Result<DemuxedGroupMetrics> = readers_pool.install(|| {
         // This unwrap can't fail since the tx will exist until we call `collect`.
         let unmatched_counter_tx = unmatched_counter
             .as_ref()

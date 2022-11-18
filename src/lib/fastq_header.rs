@@ -116,7 +116,7 @@ impl<'a> FastqHeader<'a> {
 
     /// Get the [`ReadName::umi`] field.
     pub fn umi(&self) -> Option<&[u8]> {
-        self.read_name.umi.as_ref().map(|umi_field| umi_field.borrow())
+        self.read_name.umi.as_ref().map(std::borrow::Borrow::borrow)
     }
 
     /// Set the [`ReadName::umi`] field.
