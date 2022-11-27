@@ -1,4 +1,4 @@
-use std::{fs::File, io::BufWriter, sync::Arc, vec::Vec};
+use std::{fs::File, io::BufWriter, path::PathBuf, sync::Arc, vec::Vec};
 
 use anyhow::{bail, ensure, Context, Result};
 use gzp::BUFSIZE;
@@ -7,6 +7,7 @@ use log::{debug, info};
 use parking_lot::Mutex;
 use pooled_writer::{bgzf::BgzfCompressor, Pool};
 use rayon::prelude::*;
+use read_structure::ReadStructure;
 
 use crate::{
     demux::{Demultiplex, Demultiplexer, DemuxedGroup, PerFastqRecordSet},
@@ -16,15 +17,13 @@ use crate::{
     pooled_sample_writer::PooledSampleWriter,
     sample_sheet::{self},
     thread_reader::ThreadReader,
-    utils::{check_bgzf, filenames, MultiZip},
+    utils::{check_bgzf, filenames, segment_type_to_fastq_kind, InputFastq, MultiZip},
 };
 
 /// Run demultiplexing.
 #[allow(clippy::too_many_lines)]
-pub fn run(opts: Opts) -> Result<(), anyhow::Error> {
+pub fn run(opts: Opts) -> Result<()> {
     eprint!("{}", LOGO);
-
-    let read_filter_config = opts.as_read_filter_config();
 
     let output_types_to_write = opts.output_types_to_write()?;
     let sample_sheet = sample_sheet::SampleSheet::from_path(opts)?;
@@ -35,6 +34,61 @@ pub fn run(opts: Opts) -> Result<(), anyhow::Error> {
     // specified the tool is being run to filter/mask/etc. _without_ demultiplexing
     // and so all accepted records will go into file(s) for one sample with no Undetermined
     let is_no_demux = samples.len() == 1 && samples[0].barcode.len() == 0;
+
+    // If the input FASTQs are in fact path prefixes, then glob in the FASTQs and create the
+    // read structure based on the kind/kind-number inferred from the file name.
+    let opts = if opts.fastqs.iter().all(|f| f.is_file()) {
+        // do nothing
+        opts
+    } else if opts.fastqs.iter().all(|f| !f.is_file()) {
+        ensure!(
+            opts.read_structures.is_empty(),
+            "Read Structure must not be given when the input FASTQs are a path prefix."
+        );
+
+        // glob all the FASTQs
+        // Important: sort by kind then kind number so the output kind number is ordered correctly
+        let input_fastqs: Vec<InputFastq> = opts
+            .fastqs
+            .iter()
+            .flat_map(|prefix| InputFastq::glob(&prefix).unwrap())
+            .sorted_by(|left, right| {
+                left.kind.cmp(&right.kind).then(left.kind_number.cmp(&right.kind_number))
+            })
+            .collect();
+
+        // Should only find one FASTQ with the same kind and kind number
+        for ((kind, kind_number), fastqs) in
+            &input_fastqs.iter().group_by(|f| (f.kind, f.kind_number))
+        {
+            ensure!(
+                fastqs.count() == 1,
+                "Found multiple FASTQS with the same kind and kind number ({}{})",
+                segment_type_to_fastq_kind(&kind),
+                kind_number
+            );
+        }
+
+        // build read structures, one per input FASTQ
+        let read_structures: Vec<ReadStructure> =
+            input_fastqs.iter().map(InputFastq::read_structure).collect();
+
+        // extract the list of input FASTQs
+        let fastqs: Vec<PathBuf> =
+            input_fastqs.iter().map(|input_fastq| input_fastq.path.clone()).collect();
+
+        Opts { fastqs, read_structures, ..opts }
+    } else {
+        bail!("Input FASTQS (--fastqs) must either all be files or all path prefixes, not a mixture of both")
+    };
+
+    // If there is a read structure that's all sample barcode, we need to replace it with the
+    // expected length to enable index hopping metrics.  Do so by inspecting the first read in the
+    // corresponding FASTQ
+    let opts = opts.with_fixed_sample_barcodes()?;
+
+    // Important: this must be created **after** updating the number of read structures
+    let read_filter_config = opts.as_read_filter_config();
 
     // Preflight checks
     ensure!(
@@ -64,6 +118,15 @@ pub fn run(opts: Opts) -> Result<(), anyhow::Error> {
     ensure!(
         samples.iter().all(|s| s.barcode.len() == samples[0].barcode.len()),
         "Sample metadata barcodes are unequal lengths."
+    );
+
+    // All sample barcode read segments should now have a fixed length, so check the sum of their
+    // lengths with the sum of length of the sample barcode(s) in the sample sheet.
+    ensure!(
+        opts.read_structures
+            .iter()
+            .all(|s| s.sample_barcodes().all(read_structure::ReadSegment::has_length)),
+        "Sample barcode segments in read structures must have fixed lengths."
     );
     ensure!(
         is_no_demux
@@ -309,6 +372,7 @@ mod test {
                 create_preset_sample_metadata_file, slurp_fastq, write_reads_to_file, Fq,
                 SAMPLE_BARCODE_1, SAMPLE_BARCODE_4,
             },
+            INPUT_FASTQ_SUFFIX,
         },
     };
 
@@ -449,8 +513,33 @@ mod test {
         run(opts).unwrap();
     }
 
+    /// Returns the character to use in the FASTQ file name for the given `SegmentType`.
+    fn kind_to_char(kind: SegmentType) -> char {
+        match kind {
+            SegmentType::SampleBarcode => 'I',
+            SegmentType::Skip => 'S',
+            SegmentType::MolecularBarcode => 'U',
+            SegmentType::Template => 'R',
+            kind => panic!("Could not determine kind from {:?}", kind),
+        }
+    }
+
+    /// Creates the properly formatted FASTQ file name to allow auto-detecting lane, kind, and
+    /// kind number from the file name.
+    fn fastq_file_name(prefix: &str, lane: usize, kind: SegmentType, kind_number: usize) -> String {
+        format!(
+            "{}_L00{}_{}{}{}",
+            prefix,
+            lane,
+            kind_to_char(kind),
+            kind_number,
+            INPUT_FASTQ_SUFFIX
+        )
+    }
+
     fn fastq_path(dir: impl AsRef<Path>) -> PathBuf {
-        let path = dir.as_ref().join("test.fastq.gz");
+        let file_name = fastq_file_name("test", 1, SegmentType::Template, 1);
+        let path = dir.as_ref().join(file_name);
         let records = vec![
             Fq {
                 name: "frag1", // matches the first sample -> first sample
@@ -829,30 +918,33 @@ mod test {
 
     #[rstest]
     #[allow(clippy::too_many_lines)]
-    fn test_demux_dual_index_paired_end_reads(#[values(1, 2)] threads: usize) {
+    fn test_demux_dual_index_paired_end_reads(
+        #[values(1, 2)] threads: usize,
+        #[values(true, false)] use_path_prefix: bool,
+    ) {
         let dir = tempfile::tempdir().unwrap();
-        let fq1_path = dir.path().join("fq1.fastq.gz");
+        let fq1_path = dir.path().join(fastq_file_name("test", 1, SegmentType::SampleBarcode, 1));
         write_reads_to_file(
             std::iter::once(
                 Fq { name: "frag", bases: b"AAAAAAAA", ..Fq::default() }.to_owned_record(),
             ),
             &fq1_path,
         );
-        let fq2_path = dir.path().join("fq2.fastq.gz");
+        let fq2_path = dir.path().join(fastq_file_name("test", 1, SegmentType::Template, 1));
         write_reads_to_file(
             std::iter::once(
                 Fq { name: "frag", bases: &[b'A'; 100], ..Fq::default() }.to_owned_record(),
             ),
             &fq2_path,
         );
-        let fq3_path = dir.path().join("fq3.fastq.gz");
+        let fq3_path = dir.path().join(fastq_file_name("test", 1, SegmentType::Template, 2));
         write_reads_to_file(
             std::iter::once(
                 Fq { name: "frag", bases: &[b'T'; 100], ..Fq::default() }.to_owned_record(),
             ),
             &fq3_path,
         );
-        let fq4_path = dir.path().join("fq4.fastq.gz");
+        let fq4_path = dir.path().join(fastq_file_name("test", 1, SegmentType::SampleBarcode, 2));
         write_reads_to_file(
             std::iter::once(
                 Fq { name: "frag", bases: b"GATTACAGA", ..Fq::default() }.to_owned_record(),
@@ -860,20 +952,30 @@ mod test {
             &fq4_path,
         );
 
-        let read_structures = vec![
-            ReadStructure::from_str("8B").unwrap(),
-            ReadStructure::from_str("100T").unwrap(),
-            ReadStructure::from_str("100T").unwrap(),
-            ReadStructure::from_str("9B").unwrap(),
-        ];
+        let read_structures = if use_path_prefix {
+            vec![]
+        } else {
+            vec![
+                ReadStructure::from_str("8B").unwrap(),
+                ReadStructure::from_str("100T").unwrap(),
+                ReadStructure::from_str("100T").unwrap(),
+                ReadStructure::from_str("9B").unwrap(),
+            ]
+        };
 
         let output = dir.path().join("output");
         create_dir(&output).unwrap();
 
         let metadata = create_preset_sample_metadata_file(&dir.path());
 
+        let fastqs = if use_path_prefix {
+            vec![dir.as_ref().to_path_buf()]
+        } else {
+            vec![fq1_path, fq2_path, fq3_path, fq4_path]
+        };
+
         let opts = Opts {
-            fastqs: vec![fq1_path, fq2_path, fq3_path, fq4_path],
+            fastqs,
             output_dir: output.clone(),
             sample_metadata: metadata,
             read_structures,

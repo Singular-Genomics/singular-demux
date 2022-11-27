@@ -3,16 +3,20 @@ use std::{
     fs::File,
     io::{BufReader, Read},
     path::{Path, PathBuf},
+    str::FromStr,
 };
 
 use crate::sample_metadata::SampleMetadata;
 use ahash::AHashMap;
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, Context, Result};
 use core::fmt::Display;
-use gzp::{deflate::Bgzf, BlockFormatSpec, GzpError, BUFSIZE};
+use gzp::{deflate::Bgzf, BgzfSyncReader, BlockFormatSpec, GzpError, BUFSIZE};
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use read_structure::{ReadStructure, SegmentType};
+use path_absolutize::*;
+use read_structure::{ReadStructure, SegmentType, ANY_LENGTH_STR};
+use regex::Regex;
+use seq_io::{fastq, BaseRecord};
 
 lazy_static! {
     /// Return the number of cpus as a String
@@ -128,7 +132,7 @@ where
 }
 
 /// Checks if the file is a BGZF file
-pub fn check_bgzf(file: &Path) -> Result<(), anyhow::Error> {
+pub fn check_bgzf(file: &Path) -> Result<()> {
     let mut reader = match File::open(&file) {
         Ok(f) => BufReader::with_capacity(BUFSIZE, f),
         Err(error) => {
@@ -162,7 +166,7 @@ pub fn check_bgzf(file: &Path) -> Result<(), anyhow::Error> {
 }
 
 /// Creates an error message when the file does not look like a BGZF file.
-fn report_bgzf_error<C>(file: &Path, context: C, is_gzip: bool) -> Result<(), anyhow::Error>
+fn report_bgzf_error<C>(file: &Path, context: C, is_gzip: bool) -> Result<()>
 where
     C: Display + Send + Sync + 'static,
 {
@@ -190,6 +194,106 @@ To compress an uncompressed FASTQ file with bgzip:
         filename, format, filename, filename, filename,
     );
     Err(anyhow!(message).context(context))
+}
+
+pub static INPUT_FASTQ_SUFFIX: &str = "_001.fastq.gz";
+
+lazy_static! {
+    /// <*>_L00#_<R# or I#>_001.fastq.gz
+    static ref INPUT_FASTQ_REGEX: Regex = Regex::new(r"^(.*)_L00(\d)_([RIUS])(\d)_001.fastq.gz$").unwrap();
+}
+
+// Returns the character associated with the given `SegmentType` that should be used in a FASTQ file
+// name.
+pub fn segment_type_to_fastq_kind(segment_type: &SegmentType) -> char {
+    match segment_type {
+        SegmentType::Template => 'R',
+        SegmentType::SampleBarcode => 'I',
+        SegmentType::MolecularBarcode => 'U',
+        SegmentType::Skip => 'S',
+        knd => {
+            panic!("Unreachable - segment_type should enforce only [TSMB], found {}", knd.value())
+        }
+    }
+}
+
+/// Contains information about a FASTQ that has been inferred from the file name.  This includes
+/// lane, segment type (e.g. template/read, sample barcode/index, molecular barcode/index, and
+/// skip bases), and segment number (e.g. R1 or R2).
+#[derive(Debug, Clone)]
+pub struct InputFastq {
+    pub path: PathBuf,
+    pub prefix: String,
+    pub lane: usize,
+    pub kind: SegmentType,
+    pub kind_number: u32,
+}
+
+impl InputFastq {
+    /// Create a new `InputFastq` inferring information from the file name if hte file name matches
+    /// the `INPUT_FASTQ_REGEX` pattern, `None` otherwise.
+    pub fn new<P: AsRef<Path>>(path: P) -> Option<InputFastq> {
+        let file_name = path.as_ref().file_name().unwrap().to_string_lossy();
+        match INPUT_FASTQ_REGEX.captures(&file_name) {
+            None => None,
+            Some(captures) => {
+                // Developer notes:
+                // - unwrap on .get([1234]) is safe since the regex pattern is known/fixed,
+                //   so we if it matches we know the number of capture groups
+                // - unwrap on parsing the lane as a string (to `usize`) is safe because the regex
+                //   only allows digits, so it should always succeeds.  Similarly the kind number.
+                let prefix = captures.get(1).unwrap().as_str().to_string();
+                let lane = captures.get(2).unwrap().as_str().parse::<usize>().unwrap();
+                let kind: SegmentType = match captures.get(3).unwrap().as_str() {
+                    "R" => SegmentType::Template,
+                    "I" => SegmentType::SampleBarcode,
+                    "U" => SegmentType::MolecularBarcode,
+                    "S" => SegmentType::Skip,
+                    knd => panic!("Unreachable - regex should enforce only [RIUS], found {}", knd),
+                };
+                let kind_number = captures.get(4).unwrap().as_str().parse::<u32>().unwrap();
+
+                Some(InputFastq {
+                    path: path.as_ref().to_path_buf(),
+                    prefix,
+                    lane,
+                    kind,
+                    kind_number,
+                })
+            }
+        }
+    }
+
+    /// Identifies all FASTQs that share the common path prefix and match the
+    /// `INPUT_FASTQ_REGEX` pattern.  The path prefix may also be a directory.
+    pub fn glob<P: AsRef<Path>>(path_prefix: &P) -> Result<Vec<InputFastq>> {
+        // Get the absoulte path, even if it doesn't (yet) exist
+        let abs_path_prefix = path_prefix.as_ref().absolutize()?;
+        let (parent, prefix) = if path_prefix.as_ref().is_dir() {
+            (path_prefix.as_ref(), "")
+        } else {
+            (
+                abs_path_prefix.as_ref().parent().unwrap(),
+                abs_path_prefix.file_name().unwrap().to_str().unwrap(),
+            )
+        };
+
+        let fastqs = std::fs::read_dir(parent)?
+            .map(|res| res.map(|e| e.path()).unwrap())
+            .filter(|p| {
+                let file_name = p.file_name().unwrap().to_str().unwrap();
+                p.is_file()
+                    && file_name.starts_with(prefix)
+                    && file_name.ends_with(INPUT_FASTQ_SUFFIX)
+            })
+            .filter_map(InputFastq::new)
+            .collect();
+        Ok(fastqs)
+    }
+
+    pub fn read_structure(&self) -> ReadStructure {
+        ReadStructure::from_str(&format!("{}{}", ANY_LENGTH_STR, self.kind.value())).unwrap()
+    }
 }
 
 #[cfg(not(tarpaulin_include))]
@@ -362,6 +466,25 @@ pub mod test_commons {
     }
 }
 
+/// Infers the read length contained in the given FASTQ by examining the length of the first read.
+pub fn infer_fastq_sequence_length<P: AsRef<Path>>(file: &P) -> Result<usize> {
+    let reader = BufReader::with_capacity(
+        BUFSIZE,
+        File::open(&file)
+            .with_context(|| format!("Failed to open {}", file.as_ref().to_string_lossy()))?,
+    );
+
+    let mut reader = fastq::Reader::with_capacity(BgzfSyncReader::new(reader), BUFSIZE);
+
+    match reader.next() {
+        Some(Ok(record)) => Ok(record.seq().len()),
+        _ => Err(anyhow!(
+            "Could determine sample barcode length from empty input FASTQ: {}",
+            file.as_ref().to_string_lossy()
+        )),
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::{
@@ -376,9 +499,15 @@ mod test {
     use gzp::{BgzfSyncWriter, Compression, MgzipSyncWriter};
     use read_structure::{ReadStructure, SegmentType};
 
-    use crate::{sample_metadata::SampleMetadata, utils::filename};
+    use crate::{
+        sample_metadata::SampleMetadata,
+        utils::{filename, infer_fastq_sequence_length},
+    };
+    use strum::IntoEnumIterator;
 
-    use super::{check_bgzf, filenames, MultiZip};
+    use crate::utils::{segment_kind_to_fastq_id, INPUT_FASTQ_SUFFIX};
+
+    use super::{check_bgzf, filenames, InputFastq, MultiZip};
     use tempfile::tempdir;
 
     #[test]
@@ -511,5 +640,93 @@ mod test {
         drop(gz_writer);
 
         assert!(check_bgzf(&file).is_ok());
+    }
+
+    #[test]
+    fn test_input_fastqs_does_not_match() {
+        let dir = tempdir().unwrap();
+
+        // generic
+        assert!(InputFastq::new(dir.path().join("fastq.gz")).is_none());
+
+        // lane issues
+        assert!(InputFastq::new(dir.path().join("foo_R1_001.fastq.gz")).is_none());
+        assert!(InputFastq::new(dir.path().join("foo_R1_L000_001.fastq.gz")).is_none());
+        assert!(InputFastq::new(dir.path().join("foo_R1_L01_001.fastq.gz")).is_none());
+        assert!(InputFastq::new(dir.path().join("foo_R1_L0001_001.fastq.gz")).is_none());
+
+        // segment type issues
+        assert!(InputFastq::new(dir.path().join("foo_L001_001.fastq.gz")).is_none());
+        assert!(InputFastq::new(dir.path().join("foo_L001_T1_001.fastq.gz")).is_none());
+        assert!(InputFastq::new(dir.path().join("foo_L001_1_001.fastq.gz")).is_none());
+
+        // segment num
+        assert!(InputFastq::new(dir.path().join("foo_L001_001.fastq.gz")).is_none());
+        assert!(InputFastq::new(dir.path().join("foo_L001_R01_001.fastq.gz")).is_none());
+        assert!(InputFastq::new(dir.path().join("foo_L001_RB_001.fastq.gz")).is_none());
+    }
+
+    #[test]
+    fn test_input_fastqs_matches() {
+        let dir = tempdir().unwrap();
+
+        // create the FASZTQ paths
+        let mut expected_fastqs = vec![];
+        for prefix in ["foo", "bar"] {
+            for lane in 1..4 {
+                for kind_number in 1..10 {
+                    for kind in SegmentType::iter() {
+                        let name = format!(
+                            "{}_L00{}_{}{}{}",
+                            prefix.to_string(),
+                            lane,
+                            segment_kind_to_fastq_id(&kind),
+                            kind_number,
+                            INPUT_FASTQ_SUFFIX
+                        );
+                        let path = dir.path().join(name);
+                        let fq = InputFastq::new(path.clone()).unwrap();
+
+                        assert_eq!(fq.path, path);
+                        assert_eq!(fq.prefix, prefix);
+                        assert_eq!(fq.lane, lane);
+                        assert_eq!(fq.kind, kind);
+                        assert_eq!(fq.kind_number, kind_number);
+                        // actually touch the path
+                        std::fs::File::create(path.clone()).unwrap();
+                        expected_fastqs.push(path);
+                    }
+                }
+            }
+        }
+
+        // list the FASTQs from the directory
+        let actual_paths: Vec<PathBuf> =
+            InputFastq::glob(&dir.into_path()).unwrap().iter().map(|p| p.path.clone()).collect();
+        // check that all the expected FASTQs were found
+        for expected_fastq in &expected_fastqs {
+            assert!(actual_paths.contains(expected_fastq));
+        }
+        // check that all the found FASTQS were expected
+        for actual_path in actual_paths {
+            assert!(expected_fastqs.contains(&actual_path));
+        }
+    }
+
+    #[test]
+    fn test_infer_fastq_sequence_length() {
+        let dir = tempdir().unwrap();
+
+        // Create output file
+        let file = dir.path().join("fastq.gz");
+        let writer = BufWriter::new(File::create(&file).unwrap());
+        let mut gz_writer = BgzfSyncWriter::new(writer, Compression::new(3));
+        gz_writer.write_all(b"@NAME\nGATTACA\n+\nIIIIIII\n").unwrap();
+        gz_writer.write_all(b"@NAME\nGATTACAA\n+\nIIIIIIII\n").unwrap();
+        gz_writer.flush().unwrap();
+        drop(gz_writer);
+
+        // infers from the first read if only one read
+        assert_eq!(infer_fastq_sequence_length(&file).unwrap(), 7);
     }
 }

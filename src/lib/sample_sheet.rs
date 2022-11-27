@@ -421,7 +421,7 @@ impl SampleSheet {
 
 #[cfg(test)]
 mod test {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     use crate::opts::Opts;
     use crate::sample_sheet::{SampleSheet, SampleSheetError};
@@ -479,13 +479,14 @@ mod test {
 
     #[test]
     fn test_demux_missing_fastqs_and_read_structures() {
+        // It's ok that we do not have any read structures, as it may be a path prefix.
         let records: Vec<StringRecord> = vec![StringRecord::from(vec!["unkonwn"])];
 
         let result = SampleSheet::parse_and_update_demux_options(&records, Opts::default());
         assert_matches!(result, Err(SampleSheetError::DemuxOptionsParsing { kind: _, args: _ }));
         if let Err(SampleSheetError::DemuxOptionsParsing { kind, args }) = result {
             assert_eq!(kind, MissingRequiredArgument.as_str().unwrap());
-            assert_eq!(args, "--fastqs, --read-structures".to_string());
+            assert_eq!(args, "--fastqs".to_string());
         }
     }
 
@@ -503,14 +504,12 @@ mod test {
 
     #[test]
     fn test_demux_missing_read_structure() {
+        // It's ok that we do not have any read structures, as it may be a path prefix.
+        let fastqs = vec![Path::new("/dev/null")];
         let records: Vec<StringRecord> = vec![StringRecord::from(vec!["fastqs", "/dev/null"])];
-
-        let result = SampleSheet::parse_and_update_demux_options(&records, Opts::default());
-        assert_matches!(result, Err(SampleSheetError::DemuxOptionsParsing { kind: _, args: _ }));
-        if let Err(SampleSheetError::DemuxOptionsParsing { kind, args }) = result {
-            assert_eq!(kind, MissingRequiredArgument.as_str().unwrap());
-            assert_eq!(args, "--read-structures".to_string());
-        }
+        let opts = SampleSheet::parse_and_update_demux_options(&records, Opts::default()).unwrap();
+        assert_eq!(opts.fastqs, fastqs);
+        assert!(opts.read_structures.is_empty());
     }
 
     #[test]
