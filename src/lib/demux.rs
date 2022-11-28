@@ -431,11 +431,12 @@ where
             ensure!(!zipped_reads.is_empty(), "Bug: no records found");
             let first_read_name =
                 zipped_reads[0].head().splitn(2, |c| *c == b' ').next().unwrap_or(b"");
-            for read in &zipped_reads {
+            for (idx, read) in zipped_reads.iter().enumerate() {
                 let cur_read_name = read.head().splitn(2, |c| *c == b' ').next().unwrap_or(b"");
                 ensure!(
                     first_read_name == cur_read_name,
-                    "Read names did not match: {:?} != {:?}",
+                    "Read names did not match in the 1st versus {}th FASTQ: {:?} != {:?}",
+                    idx + 1,
                     String::from_utf8_lossy(first_read_name),
                     String::from_utf8_lossy(cur_read_name)
                 );
