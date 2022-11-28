@@ -187,6 +187,7 @@ pub fn run(opts: Opts) -> Result<()> {
             &read_filter_config,
             matcher,
             true,
+            opts.skip_read_name_check,
         )?;
         Box::new(demuxer)
     } else {
@@ -204,6 +205,7 @@ pub fn run(opts: Opts) -> Result<()> {
             &read_filter_config,
             matcher,
             true,
+            opts.skip_read_name_check,
         )?;
         Box::new(demuxer)
     };

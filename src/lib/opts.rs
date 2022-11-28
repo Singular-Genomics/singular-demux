@@ -216,6 +216,12 @@ pub struct Opts {
     /// [default: None]
     #[clap(long, possible_values=MatcherKind::possible_values(), display_order = 31)]
     pub override_matcher: Option<MatcherKind>,
+
+    /// If this is true, then all the read names across FASTQs will not be enforced to be the same.
+    /// This may be useful when the read names are known to be the same and performance matters.
+    /// Regardless, the first read name in each FASTQ will always be checked.
+    #[clap(long, display_order = 31)]
+    pub skip_read_name_check: bool,
 }
 
 impl Opts {
@@ -466,6 +472,7 @@ impl Default for Opts {
             decompression_threads_per_reader: 4,
             override_matcher: None,
             output_dir: PathBuf::default(),
+            skip_read_name_check: false,
         }
     }
 }

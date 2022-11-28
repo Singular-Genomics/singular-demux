@@ -3,6 +3,7 @@
 use std::{borrow::Cow, iter::IntoIterator, vec::Vec};
 
 use anyhow::{ensure, Context, Result};
+use bstr::ByteSlice;
 use itertools::Itertools;
 use log::debug;
 use read_structure::{ReadSegment, ReadStructure, SegmentType};
@@ -187,6 +188,9 @@ pub struct Demultiplexer<'a, M: Matcher> {
     /// If false, unmatched barcodes will not be collected, since there will be no thread to send to if unmatched are not
     /// being collected.
     collect_unmatched: bool,
+    /// If this is true, then the read names across FASTQs will not be enforced to be the same.  This may be useful when
+    /// the read names are known to be the same and performance matters.
+    skip_read_name_check: bool,
 }
 
 impl<'a, M> Demultiplexer<'a, M>
@@ -203,6 +207,7 @@ where
         read_filter_config: &'a DemuxReadFilterConfig,
         matcher: M,
         collect_unmatched: bool,
+        skip_read_name_check: bool,
     ) -> Result<Self> {
         // TODO: use display instead of debug formatting
         ensure!(
@@ -238,6 +243,7 @@ where
             matcher,
             sample_barcode_hop_checker,
             collect_unmatched,
+            skip_read_name_check,
         })
     }
 
@@ -433,6 +439,23 @@ where
                     String::from_utf8_lossy(first_read_name),
                     String::from_utf8_lossy(cur_read_name)
                 );
+            }
+
+            if !self.skip_read_name_check {
+                let first_head = zipped_reads[0].head();
+                let end_index = zipped_reads[0].head().find_byte(b' ').unwrap_or(first_head.len());
+                for read in zipped_reads.iter().dropping(1) {
+                    let cur_head = read.head();
+                    let ok = cur_head.len() == end_index
+                        || (cur_head.len() > end_index && cur_head[end_index] == b' ');
+                    let ok = ok && first_head[0..end_index] == cur_head[0..end_index];
+                    ensure!(
+                        ok,
+                        "Read names did not match: {:?} != {:?}",
+                        String::from_utf8_lossy(first_head),
+                        String::from_utf8_lossy(cur_head)
+                    );
+                }
             }
 
             // If any filtering was specified, check it here by peeking at the header of the first read in the set of reads.
@@ -706,6 +729,7 @@ mod test {
                             &self.read_filter,
                             matcher,
                             false,
+                            false,
                         )
                         .unwrap(),
                     )
@@ -724,6 +748,7 @@ mod test {
                             &self.output_types,
                             &self.read_filter,
                             matcher,
+                            false,
                             false,
                         )
                         .unwrap(),
@@ -1632,6 +1657,7 @@ mod test {
             &output_types,
             &filter_config,
             matcher,
+            false,
             false,
         )
         .unwrap();
