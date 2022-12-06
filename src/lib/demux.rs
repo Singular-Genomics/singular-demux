@@ -427,21 +427,6 @@ where
             let mut output_reads = vec![];
             let mut qual_counter = BaseQualCounter::new();
 
-            // Ensure that all the reads have the same read name
-            ensure!(!zipped_reads.is_empty(), "Bug: no records found");
-            let first_read_name =
-                zipped_reads[0].head().splitn(2, |c| *c == b' ').next().unwrap_or(b"");
-            for (idx, read) in zipped_reads.iter().enumerate() {
-                let cur_read_name = read.head().splitn(2, |c| *c == b' ').next().unwrap_or(b"");
-                ensure!(
-                    first_read_name == cur_read_name,
-                    "Read names did not match in the 1st versus {}th FASTQ: {:?} != {:?}",
-                    idx + 1,
-                    String::from_utf8_lossy(first_read_name),
-                    String::from_utf8_lossy(cur_read_name)
-                );
-            }
-
             if !self.skip_read_name_check {
                 let first_head = zipped_reads[0].head();
                 let end_index = zipped_reads[0].head().find_byte(b' ').unwrap_or(first_head.len());
@@ -1708,7 +1693,7 @@ mod test {
             ReadStructure::from_str("9B100T").unwrap(),
         ];
 
-        let mut fq1: OwnedRecord= Fq { name: "frag1", bases: &[&SAMPLE_BARCODE_1[0..8], &[b'A'; 100]].concat(), ..Fq::default() }.to_owned_record();
+        let mut fq1: OwnedRecord = Fq { name: "frag1", bases: &[&SAMPLE_BARCODE_1[0..8], &[b'A'; 100]].concat(), ..Fq::default() }.to_owned_record();
         let fq2 = Fq { name: "frag2", bases: &[&SAMPLE_BARCODE_1[8..],  &[b'T'; 100]].concat(), ..Fq::default() }.to_owned_record();
 
         // mess with the FQ1 read name
