@@ -1,16 +1,23 @@
 #![forbid(unsafe_code)]
 
-use std::{cmp::Ordering, num::NonZeroUsize, path::PathBuf, str::FromStr, vec::Vec};
+use std::{
+    cmp::Ordering, collections::HashMap, fs::File, io::BufReader, num::NonZeroUsize, path::PathBuf,
+    str::FromStr, vec::Vec,
+};
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, ensure, Context, Result};
+use bstr::ByteSlice;
 use clap::Parser;
 use env_logger::Env;
-use read_structure::{ReadSegment, ReadStructure, SegmentType};
+use gzp::{BgzfSyncReader, BUFSIZE};
+use itertools::Itertools;
+use read_structure::{ReadSegment, ReadStructure, SegmentType, ANY_LENGTH_STR};
+use seq_io::{fastq, BaseRecord};
 
 use crate::{
     demux::DemuxReadFilterConfig,
     matcher::{MatcherKind, UNDETERMINED_NAME},
-    utils::{built_info, infer_fastq_sequence_length},
+    utils::{built_info, infer_fastq_sequence_length, InputFastq},
 };
 
 pub static LOGO: &str = "
@@ -212,6 +219,116 @@ pub struct Opts {
 }
 
 impl Opts {
+    /// Extracts one or more [`FastqsAndReadStructure`]s given the opts.
+    ///
+    /// If the input FASTQs are all files then there must be one read structure per FASTQ.  The
+    /// groups returned will have a single FASTQ and read structure per.
+    ///
+    /// If the input FASTQs are path prefix(es) then read structure must be empty (not given).  The
+    /// FASTQ files are gathered using the path prefix(es), with their kind (e.g. sample barcode or
+    /// template), kind number (e.g. read one or index two), and lane inferred from the file name.
+    /// Reads across differnt lanes with the same kind and kind number are grouped, and a
+    /// corresponding read structure is built assuming all the bases in that read are of the given
+    /// kind.  The groups are then sorted by kind and kind number to proper ordering of sample
+    /// barcodes, UMIs, and template reads (i.e. read pairs).
+    ///
+    /// If the input FASTQS are a mix of files and path prefixes, this function will return an
+    /// eerror.
+    pub fn from(
+        fastqs: Vec<PathBuf>,
+        read_structures: Vec<ReadStructure>,
+    ) -> Result<Vec<FastqsAndReadStructure>> {
+        // must have FASTQs
+        ensure!(!fastqs.is_empty(), "No FASTQs or path prefixes found with --fastq");
+
+        // If the input FASTQs are in fact path prefixes, then glob in the FASTQs and create the
+        // read structure based on the kind/kind-number inferred from the file name.
+        let input_fastq_group: Vec<FastqsAndReadStructure> = if fastqs.iter().all(|f| f.is_file()) {
+            // must have read structures, and match the # of FASTQs
+            ensure!(
+                fastqs.len() == read_structures.len(),
+                "Same number of read structures should be given as FASTQs"
+            );
+
+            FastqsAndReadStructure::zip(&fastqs, &read_structures)
+        } else if fastqs.iter().all(|f| !f.is_file()) {
+            ensure!(
+                read_structures.is_empty(),
+                "Read Structure must not be given when the input FASTQs are a path prefix."
+            );
+
+            let input_fastq_group = FastqsAndReadStructure::from_prefixes(&fastqs);
+
+            // must find some FASTQs since we ensured it above
+            ensure!(
+                !input_fastq_group.is_empty(),
+                "Bug: No FASTQS found for prefix(es): {:?}.",
+                fastqs
+            );
+
+            input_fastq_group
+        } else {
+            bail!("Input FASTQS (--fastqs) must either all be files or all path prefixes, not a mixture of both")
+        };
+
+        // Ensure that every group has the same number of FASTQs!
+        for group in &input_fastq_group {
+            ensure!(
+                group.fastqs.len() == input_fastq_group[0].fastqs.len(),
+                "Different # of FASTQs per group\nGroup 1: {:?}\nGroup 2: {:?}",
+                input_fastq_group[0].fastqs,
+                group.fastqs
+            );
+        }
+
+        // Ensure that all FASTQs have the same read name in the header.  This checks only the
+        // first read in each FASTQ
+        let mut first_head: Vec<u8> = vec![];
+        let mut end_index: usize = 0;
+        let mut first_file: String = String::from("");
+        for group in &input_fastq_group {
+            for file in &group.fastqs {
+                // Open the reader
+                let reader = BufReader::with_capacity(
+                    BUFSIZE,
+                    File::open(&file)
+                        .with_context(|| format!("Failed to open {}", file.to_string_lossy()))?,
+                );
+                let mut reader = fastq::Reader::with_capacity(BgzfSyncReader::new(reader), BUFSIZE);
+
+                // Check the first record
+                match reader.next() {
+                    Some(Ok(record)) => {
+                        if first_head.is_empty() {
+                            first_head = record.head().to_vec();
+                            end_index = first_head.find_byte(b' ').unwrap_or(first_head.len());
+                            first_file = file.to_string_lossy().to_string();
+                        } else {
+                            let head = record.head();
+                            let ok = head.len() == end_index
+                                || (head.len() > end_index && head[end_index] == b' ');
+                            let ok = ok && first_head[0..end_index] == head[0..end_index];
+                            ensure!(
+                                ok,
+                                "Mismatching read names in the FASTQS:\n{} in {}\n{} in {}",
+                                std::str::from_utf8(&first_head)?,
+                                first_file,
+                                std::str::from_utf8(record.head())?,
+                                file.to_string_lossy()
+                            );
+                        }
+                    }
+                    _ => bail!("Empty input FASTQ: {}", file.to_string_lossy()),
+                }
+            }
+        }
+
+        // If there is a read structure that's all sample barcode, we need to replace it with the
+        // expected length to enable index hopping metrics.  Do so by inspecting the first read in the
+        // corresponding FASTQ
+        input_fastq_group.iter().map(|g| g.clone().with_fixed_sample_barcodes()).collect()
+    }
+
     /// Extract a [`DemuxReadFilterConfig`] from the CLI opts.
     pub fn as_read_filter_config(&self) -> DemuxReadFilterConfig {
         // Make a vec of quality mask thresholds that is always the same length as the number
@@ -363,20 +480,170 @@ pub fn setup() -> Opts {
     Opts::parse()
 }
 
+/// A set of FASTQs with the same kind (e.g. sample barcode, template) and kind number (e.g. read
+/// one or index two).  This FASTQs differ based on path prefix and lane number.
+#[derive(Debug, Clone)]
+pub struct FastqsAndReadStructure {
+    pub fastqs: Vec<PathBuf>,
+    pub read_structure: ReadStructure,
+}
+
+impl FastqsAndReadStructure {
+    /// Zips the path to FASTQs and associated read structures into a `FastqsAndReadStructure`.  
+    /// The number of FASTQs and read structures must be the same, but is not validated here.
+    pub fn zip(
+        fastqs: &[PathBuf],
+        read_structures: &[ReadStructure],
+    ) -> Vec<FastqsAndReadStructure> {
+        fastqs
+            .iter()
+            .zip(read_structures.iter())
+            .map(|(f, r)| FastqsAndReadStructure {
+                fastqs: vec![f.clone()],
+                read_structure: r.clone(),
+            })
+            .collect()
+    }
+
+    /// Finds all FASTQs with a given file pattern (see `INPUT_FASTQ_REGEX` in `utils.rs`) and
+    /// groups them by kind (`ReadSegment`) and kind number (e.g. read 1 or 2).
+    ///
+    /// After the FASTQs are discovered, the FASTQs are grouped and sorted by kind and kind number.
+    /// Then each group is sorted by prefix and lane.  These steps ensure that (1) the group of
+    /// FASTQS with the same kind and kind number are read in serially, (2) the FASTQS are
+    /// synchronized across groups (e.g. the same lane/prefix across kind/kind-number will be read
+    /// at the same time), and (3) we emit the read pairs in the correct order (e.g. R1/R2).
+    pub fn from_prefixes(prefixes: &[PathBuf]) -> Vec<FastqsAndReadStructure> {
+        // glob all the FASTQs
+        let input_fastqs: Vec<InputFastq> =
+            prefixes.iter().flat_map(|prefix| InputFastq::glob(&prefix).unwrap()).collect();
+
+        // Collect all FASTQs by kind and kind number
+        let mut unsorted_groups: HashMap<(SegmentType, u32), Vec<InputFastq>> = HashMap::new();
+        for f in input_fastqs {
+            let key = (f.kind, f.kind_number);
+            unsorted_groups.entry(key).or_insert_with(|| Vec::with_capacity(1)).push(f);
+        }
+
+        // Sort across each group of FASTQS by kind and kind number.  For each group, sort by
+        // prefix and lane.
+        unsorted_groups
+            .into_iter()
+            .sorted_by(
+                |((left_kind, left_kind_number), _), ((right_kind, right_kind_number), _)| {
+                    left_kind.cmp(right_kind).then(left_kind_number.cmp(right_kind_number))
+                },
+            )
+            .map(|((kind, _), fastqs)| {
+                // this should always succeed
+                let read_structure =
+                    ReadStructure::from_str(&format!("{}{}", ANY_LENGTH_STR, kind.value()))
+                        .unwrap();
+
+                // sort FASTQs by prefix and lane for consistent ordering across groups
+                let fastqs = fastqs
+                    .iter()
+                    .sorted_by(|left, right| {
+                        left.prefix.cmp(&right.prefix).then(left.lane.cmp(&right.lane))
+                    })
+                    .map(|f| f.path.clone())
+                    .collect();
+
+                FastqsAndReadStructure { fastqs, read_structure }
+            })
+            .collect()
+    }
+
+    /// Builds a new copy of this `FastqsAndReadStructure` where a read structure with variable
+    /// length sample barcodes is replaced with fixed length sample barcode.  The fixed length of
+    /// the sample barcode is inferred from the first FASTQ by examining the length of the first
+    /// read, then removing any other fixed length segments, with the remaining length used as
+    /// the fixed sample barcode length.
+    ///
+    /// If there is no read structure with a variable length sample barcode, itself is
+    /// returned.
+    pub fn with_fixed_sample_barcodes(self) -> Result<Self> {
+        if self.read_structure.sample_barcodes().all(read_structure::ReadSegment::has_length) {
+            Ok(self)
+        } else {
+            // Get the read length from the FASTQ, subtract all non variable length
+            // segments (must be a sample barcode if we've gone this far).
+            let read_length: usize = infer_fastq_sequence_length(&self.fastqs[0])?;
+            let fixed_length: usize =
+                self.read_structure.iter().map(|s| s.length().unwrap_or(0)).sum();
+            let read_structure = match fixed_length.cmp(&read_length) {
+                Ordering::Greater => bail!(
+                    "Read length ({}) is too short ({}) for the read structure {} in {:?}",
+                    read_length,
+                    fixed_length,
+                    self.read_structure,
+                    self.fastqs[0]
+                ),
+                Ordering::Equal => bail!("Variable length sample barcode would be zero (read length: {}, sum of fixed segment lengths: {}) in FASTQ: {:?}",
+                    read_length, fixed_length,  self.fastqs[0]
+                ),
+                Ordering::Less => {
+                    let read_segments: Vec<ReadSegment> = self.read_structure
+                        .iter()
+                        .map(|s| {
+                            if s.has_length() {
+                                *s
+                            } else {
+                                ReadSegment::from_str(&format!(
+                                    "{}{}",
+                                    read_length - fixed_length,
+                                    s.kind.value()
+                                ))
+                                .unwrap()
+                            }
+                        })
+                        .collect();
+                    ReadStructure::new(read_segments)?
+                }
+            };
+            Ok(FastqsAndReadStructure { fastqs: self.fastqs, read_structure })
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::{
+        collections::HashMap,
         fs::File,
         io::{BufWriter, Write},
-        path::PathBuf,
+        path::{Path, PathBuf},
         str::FromStr,
     };
 
     use gzp::{BgzfSyncWriter, Compression};
-    use read_structure::ReadStructure;
+    use read_structure::{ReadStructure, SegmentType};
+    use rstest::rstest;
     use tempfile::tempdir;
 
+    use crate::utils::segment_type_to_fastq_kind;
+
     use super::Opts;
+
+    fn write(fastq: &Path, read_length: usize) {
+        let writer = BufWriter::new(File::create(fastq).unwrap());
+        let mut gz_writer = BgzfSyncWriter::new(writer, Compression::new(3));
+        let bases = String::from_utf8(vec![b'A'; read_length]).unwrap();
+        let quals = String::from_utf8(vec![b'I'; read_length]).unwrap();
+        let data = format!("@NAME\n{}\n+\n{}\n", bases, quals);
+        gz_writer.write_all(data.as_bytes()).unwrap();
+        gz_writer.flush().unwrap();
+    }
+
+    fn write_with_read_name(fastq: &Path, read_name: &str) {
+        let writer = BufWriter::new(File::create(fastq).unwrap());
+        let mut gz_writer = BgzfSyncWriter::new(writer, Compression::new(3));
+        let bases = String::from_utf8(vec![b'A'; 10]).unwrap();
+        let quals = String::from_utf8(vec![b'I'; 10]).unwrap();
+        let data = format!("@{}\n{}\n+\n{}\n", read_name, bases, quals);
+        gz_writer.write_all(data.as_bytes()).unwrap();
+        gz_writer.flush().unwrap();
+    }
 
     struct FastqDef {
         read_structure: ReadStructure,
@@ -387,13 +654,7 @@ mod test {
 
     impl FastqDef {
         fn write(&self) {
-            let writer = BufWriter::new(File::create(&self.fastq).unwrap());
-            let mut gz_writer = BgzfSyncWriter::new(writer, Compression::new(3));
-            let bases = String::from_utf8(vec![b'A'; self.read_length]).unwrap();
-            let quals = String::from_utf8(vec![b'I'; self.read_length]).unwrap();
-            let data = format!("@NAME\n{}\n+\n{}\n", bases, quals);
-            gz_writer.write_all(data.as_bytes()).unwrap();
-            gz_writer.flush().unwrap();
+            write(&self.fastq, self.read_length);
         }
     }
 
@@ -490,4 +751,236 @@ mod test {
             assert!(result.is_err());
         }
     }
+
+    #[test]
+    fn test_fastqs_and_read_structure_from_error_mix_of_files_and_paths() {
+        let dir = tempdir().unwrap();
+
+        let file = dir.path().join("foo.fastq.gz");
+        let prefix = dir.path().join("bar");
+
+        // actually touch the path
+        std::fs::File::create(file.clone()).unwrap();
+
+        let opts = Opts {
+            read_structures: vec![ReadStructure::from_str("+B").unwrap()],
+            fastqs: vec![file, prefix],
+            ..Opts::default()
+        };
+
+        let result = Opts::from(opts.fastqs, opts.read_structures);
+        assert!(result.is_err());
+        if let Err(error) = result {
+            assert!(error.to_string().contains("must either all be files or all path prefixes"));
+        }
+    }
+
+    #[test]
+    fn test_fastqs_and_read_structure_from_error_no_fastqs() {
+        let opts = Opts {
+            read_structures: vec![ReadStructure::from_str("+B").unwrap()],
+            fastqs: vec![],
+            ..Opts::default()
+        };
+
+        let result = Opts::from(opts.fastqs, opts.read_structures);
+        assert!(result.is_err());
+        if let Err(error) = result {
+            assert!(error.to_string().contains("No FASTQs or path prefixes found"));
+        }
+    }
+
+    #[test]
+    fn test_fastqs_and_read_structure_from_error_same_number_of_fastqs_as_read_structures() {
+        let dir = tempdir().unwrap();
+
+        let file1 = dir.path().join("foo.1.fastq.gz");
+        let file2 = dir.path().join("foo.2.fastq.gz");
+
+        // actually touch the path
+        std::fs::File::create(file1.clone()).unwrap();
+        std::fs::File::create(file2.clone()).unwrap();
+
+        let opts = Opts {
+            read_structures: vec![ReadStructure::from_str("+B").unwrap()],
+            fastqs: vec![file1, file2],
+            ..Opts::default()
+        };
+
+        let result = Opts::from(opts.fastqs, opts.read_structures);
+        assert!(result.is_err());
+        if let Err(error) = result {
+            assert!(error
+                .to_string()
+                .contains("Same number of read structures should be given as FASTQs"));
+        }
+    }
+
+    #[test]
+    fn test_fastqs_and_read_structure_from_error_read_structures_with_prefix() {
+        let dir = tempdir().unwrap();
+        let prefix = dir.path().join("prefix");
+        let opts = Opts {
+            read_structures: vec![ReadStructure::from_str("+B").unwrap()],
+            fastqs: vec![prefix],
+            ..Opts::default()
+        };
+
+        let result = Opts::from(opts.fastqs, opts.read_structures);
+        assert!(result.is_err());
+        if let Err(error) = result {
+            assert!(error.to_string().contains("Read Structure must not be given"));
+        }
+    }
+
+    #[test]
+    fn test_fastqs_and_read_structure_from_error_no_fastqs_found_with_prefix() {
+        let dir = tempdir().unwrap();
+        let prefix = dir.path().join("prefix");
+        let opts = Opts { read_structures: vec![], fastqs: vec![prefix], ..Opts::default() };
+
+        let result = Opts::from(opts.fastqs, opts.read_structures);
+        assert!(result.is_err());
+        if let Err(error) = result {
+            assert!(error.to_string().contains("No FASTQS found for prefix"));
+        }
+    }
+
+    #[rstest]
+    #[case("pre", & ["L001_R1_001.fastq.gz", "L002_R1_001.fastq.gz", "L001_R2_001.fastq.gz"])] // # lanes differ: R1 has L1, an R2 had both L1 & L2
+    #[case("pre", & ["sub1_L001_R1_001.fastq.gz","sub1_L002_R1_001.fastq.gz","sub2_L001_R2_001.fastq.gz"])] // # of lanes differ: R1 has L1 & L2 (sub1), R2 has L1 (sub2)
+    #[case("pre", & ["sub1_L001_R1_001.fastq.gz","sub2_L001_R1_001.fastq.gz","sub2_L001_I2_001.fastq.gz"])] // # of prefixes differ: R1 has L1 (sub1 & sub2), I1 has L1 (sub2)
+    fn test_fastqs_and_read_structure_from_error_differing_number_of_fastqs_per_group_with_prefix(
+        #[case] prefix: String,
+        #[case] suffixes: &[&str],
+    ) {
+        let dir = tempdir().unwrap();
+        let prefix = dir.path().join(prefix);
+
+        let mut fastqs: Vec<PathBuf> = vec![];
+        for suffix in suffixes.iter() {
+            let fastq = PathBuf::from(prefix.to_string_lossy().to_string() + "_" + suffix);
+            std::fs::File::create(fastq.clone()).unwrap();
+            fastqs.push(fastq);
+        }
+
+        let opts =
+            Opts { read_structures: vec![], fastqs: vec![prefix.clone()], ..Opts::default() };
+
+        let result = Opts::from(opts.fastqs, opts.read_structures);
+        assert!(result.is_err());
+        if let Err(error) = result {
+            assert!(error.to_string().contains("Different # of FASTQs per group"));
+        }
+    }
+
+    fn compare_fastq_file_names(actual: &[PathBuf], expected: &[String]) {
+        assert_eq!(actual.len(), expected.len());
+        for (act, exp) in actual.iter().zip(expected.iter()) {
+            assert_eq!(act.file_name().unwrap().to_string_lossy().to_string(), exp.to_string());
+        }
+    }
+
+    #[test]
+    fn test_fastqs_and_read_structure_from_ok_complex() {
+        let dir = tempdir().unwrap();
+
+        let mut prefixes: Vec<PathBuf> = vec![];
+        let mut fastqs_map: HashMap<(SegmentType, u32), Vec<String>> = HashMap::new();
+        for prefix_i in 1..=4 {
+            let prefix = format!("prefix{}", prefix_i);
+            prefixes.push(dir.path().join(prefix));
+            for lane_i in 1..=prefix_i {
+                for kind in [SegmentType::SampleBarcode, SegmentType::Template] {
+                    for kind_number in 1..=2 {
+                        let file_name = format!(
+                            "prefix{}_L00{}_{}{}_001.fastq.gz",
+                            prefix_i,
+                            lane_i,
+                            segment_type_to_fastq_kind(&kind),
+                            kind_number
+                        );
+                        fastqs_map
+                            .entry((kind, kind_number))
+                            .or_insert_with(|| Vec::with_capacity(1))
+                            .push(file_name.clone());
+                        let fastq = dir.path().join(file_name);
+                        write(&fastq, 50);
+                    }
+                }
+            }
+        }
+
+        let opts = Opts { read_structures: vec![], fastqs: prefixes, ..Opts::default() };
+
+        let results = Opts::from(opts.fastqs, opts.read_structures).unwrap();
+        assert_eq!(results.len(), 4);
+
+        // I1
+        let result = &results[0];
+        assert_eq!(result.read_structure.to_string(), "50B");
+        compare_fastq_file_names(
+            &result.fastqs,
+            fastqs_map.get(&(SegmentType::SampleBarcode, 1)).unwrap(),
+        );
+        // I2
+        let result = &results[1];
+        assert_eq!(result.read_structure.to_string(), "50B");
+        compare_fastq_file_names(
+            &result.fastqs,
+            fastqs_map.get(&(SegmentType::SampleBarcode, 2)).unwrap(),
+        );
+
+        // R1
+        let result = &results[2];
+        assert_eq!(result.read_structure.to_string(), "+T");
+        compare_fastq_file_names(
+            &result.fastqs,
+            fastqs_map.get(&(SegmentType::Template, 1)).unwrap(),
+        );
+        // R2
+        let result = &results[3];
+        assert_eq!(result.read_structure.to_string(), "+T");
+        compare_fastq_file_names(
+            &result.fastqs,
+            fastqs_map.get(&(SegmentType::Template, 2)).unwrap(),
+        );
+    }
+
+    #[rstest]
+    #[case(&"foo", &"foo", "L001_R1_001.fastq.gz", "L002_R1_001.fastq.gz", true)] // same FASTQ group, read names match
+    #[case(&"foo", &"foo", "L001_R1_001.fastq.gz", "L001_R2_001.fastq.gz", true)] // different FASTQ group, read names match
+    #[case(&"fo", &"foo", "L001_R1_001.fastq.gz", "L001_R2_001.fastq.gz", false)] // read names different length
+    #[case(&"foo", &"fao", "L001_R1_001.fastq.gz", "L002_R1_001.fastq.gz", false)] // read names same length, mismatch
+    fn test_opts_from_fastqs_check_first_read_name(
+        #[case] fq1_read_name: &str,
+        #[case] fq2_read_name: &str,
+        #[case] fq1_suffix: &str,
+        #[case] fq2_suffix: &str,
+        #[case] ok: bool,
+    ) {
+        let dir = tempdir().unwrap();
+
+        let fastq_r1 = dir.path().join(format!("prefix_{}", fq1_suffix));
+        write_with_read_name(&fastq_r1, fq1_read_name);
+
+        let fastq_r2 = dir.path().join(format!("prefix_{}", fq2_suffix));
+        write_with_read_name(&fastq_r2, fq2_read_name);
+
+        let opts = Opts {
+            read_structures: vec![],
+            fastqs: vec![dir.path().to_path_buf()],
+            ..Opts::default()
+        };
+
+        let result = Opts::from(opts.fastqs, opts.read_structures);
+
+        assert_eq!(result.is_ok(), ok);
+        if let Err(error) = result {
+            assert!(error.to_string().contains("Mismatching read names in the FASTQS"));
+        }
+    }
+
+    // #[test]
+    // fn test_opts_from_fastqs_name_mismatch_within_groups() {}
 }

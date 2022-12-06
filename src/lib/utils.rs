@@ -13,7 +13,7 @@ use core::fmt::Display;
 use gzp::{deflate::Bgzf, BgzfSyncReader, BlockFormatSpec, GzpError, BUFSIZE};
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use path_absolutize::*;
+use path_absolutize::Absolutize;
 use read_structure::{ReadStructure, SegmentType, ANY_LENGTH_STR};
 use regex::Regex;
 use seq_io::{fastq, BaseRecord};
@@ -296,6 +296,25 @@ impl InputFastq {
     }
 }
 
+/// Infers the read length contained in the given FASTQ by examining the length of the first read.
+pub fn infer_fastq_sequence_length<P: AsRef<Path>>(file: &P) -> Result<usize> {
+    let reader = BufReader::with_capacity(
+        BUFSIZE,
+        File::open(&file)
+            .with_context(|| format!("Failed to open {}", file.as_ref().to_string_lossy()))?,
+    );
+
+    let mut reader = fastq::Reader::with_capacity(BgzfSyncReader::new(reader), BUFSIZE);
+
+    match reader.next() {
+        Some(Ok(record)) => Ok(record.seq().len()),
+        _ => Err(anyhow!(
+            "Could determine sample barcode length from empty input FASTQ: {}",
+            file.as_ref().to_string_lossy()
+        )),
+    }
+}
+
 #[cfg(not(tarpaulin_include))]
 #[cfg(test)]
 pub mod test_commons {
@@ -463,25 +482,6 @@ pub mod test_commons {
             });
         }
         reads
-    }
-}
-
-/// Infers the read length contained in the given FASTQ by examining the length of the first read.
-pub fn infer_fastq_sequence_length<P: AsRef<Path>>(file: &P) -> Result<usize> {
-    let reader = BufReader::with_capacity(
-        BUFSIZE,
-        File::open(&file)
-            .with_context(|| format!("Failed to open {}", file.as_ref().to_string_lossy()))?,
-    );
-
-    let mut reader = fastq::Reader::with_capacity(BgzfSyncReader::new(reader), BUFSIZE);
-
-    match reader.next() {
-        Some(Ok(record)) => Ok(record.seq().len()),
-        _ => Err(anyhow!(
-            "Could determine sample barcode length from empty input FASTQ: {}",
-            file.as_ref().to_string_lossy()
-        )),
     }
 }
 
@@ -670,7 +670,7 @@ mod test {
     fn test_input_fastqs_matches() {
         let dir = tempdir().unwrap();
 
-        // create the FASZTQ paths
+        // create the FASTQ paths
         let mut expected_fastqs = vec![];
         for prefix in ["foo", "bar"] {
             for lane in 1..4 {

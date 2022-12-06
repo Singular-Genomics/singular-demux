@@ -13,21 +13,21 @@ This repository is home to the `sgdemux` tool for demultiplexing sequencing data
 * [Overview](#overview)
 * [Usage](#usage)
   * [Inputs](#inputs)
-    * [FASTQ Files](#fastq-files)
-      * [Auto-detecting FASTQS from a Path Prefix](#auto-detecting-fastqs-from-a-path-prefix)
-    * [Read Structures](#read-structures)
-    * [Sample Sheet](#sample-sheet)
-      * [Specifying Demultiplexing Command Line Options](#specifying-demultiplexing-command-line-options)
+      * [FASTQ Files](#fastq-files)
+        * [Auto-detecting FASTQS from a Path Prefix](#auto-detecting-fastqs-from-a-path-prefix)
+      * [Read Structures](#read-structures)
       * [Specifying Sample Information](#specifying-sample-information)
-    * [Full Argument List](#full-argument-list)
-    * [Performance Considerations](#performance-considerations)
+        * [Sample Sheet](#sample-sheet)
+        * [Simple Two-column CSV](#simple-two-column-csv)
+      * [Full Argument List](#full-argument-list)
+      * [Performance Considerations](#performance-considerations)
   * [Outputs](#outputs)
-    * [Demultiplexed FASTQs](#demultiplexed-fastqs)
-    * [Metrics](#metrics)
-      * [per_sample_metrics.tsv](#per_sample_metricstsv)
-      * [run_metrics.tsv](#run_metricstsv)
-      * [most_frequent_unmatched.tsv](#most_frequent_unmatchedtsv)
-      * [sample_barcode_hop_metrics.tsv](#sample_barcode_hop_metricstsv)
+      * [Demultiplexed FASTQs](#demultiplexed-fastqs)
+      * [Metrics](#metrics)
+        * [per_sample_metrics.tsv](#per_sample_metricstsv)
+        * [run_metrics.tsv](#run_metricstsv)
+        * [most_frequent_unmatched.tsv](#most_frequent_unmatchedtsv)
+        * [sample_barcode_hop_metrics.tsv](#sample_barcode_hop_metricstsv)
 * [Advance Usage](#advance-usage)
   * [Single Sample](#single-sample)
 
@@ -110,7 +110,7 @@ sgdemux \
 
 ### Inputs
 
-##### FASTQ Files
+#### FASTQ Files
 
 The full set of FASTQ files generated for a run, or lane, or sequencing should be provided, including all template and index reads.  For example if a paired-end sequencing run was performed with dual sample index reads, four files should be provided:
 
@@ -127,7 +127,7 @@ for read in R1 R2 I1 I2; do cat L*/${read}.fastq.gz > ./${read}.fastq.gz; done
 
 FASTQ files _must_ be BGZF compressed.
 
-###### Auto-detecting FASTQS from a Path Prefix
+##### Auto-detecting FASTQS from a Path Prefix
 
 Alternatively, the FASTQS can be auto-detected when a path prefix is given to `--fastqs <dir>/<prefix>`.
 The FASTQs must be named `<dir>/<prefix>_L00<lane>_<kind><kind-number>_001.fastq.gz`, where `kind` is
@@ -138,17 +138,32 @@ Structure will be derived file names (kind and kind number), with the full read 
 E.g. if the following FASTQs are present with path prefix `/path/to/prefix`:
 
 ```
-/path/to/prefix_L001_I1_001.fasztq.gz
-/path/to/prefix_L001_R1_001.fasztq.gz
-/path/to/prefix_L001_R2_001.fasztq.gz
-/path/to/prefix_L001_I2_001.fasztq.gz
+/path/to/prefix_L001_I1_001.fastq.gz
+/path/to/prefix_L001_R1_001.fastq.gz
+/path/to/prefix_L001_R2_001.fastq.gz
+/path/to/prefix_L001_I2_001.fastq.gz
 ```
 
 then the `+B +T +T +B` read structure will be used.  Since this tool requires all sample barcode
 segments to have a fixed length, the first read in any index/sample-barcode FASTQ will be examined
 and its length used as the expected sample barcode length.
 
-##### Read Structures
+Furthermore, multiple lanes may be given and will be used for demultiplexing:
+
+```
+/path/to/prefix_L001_I1_001.fastq.gz
+/path/to/prefix_L002_I1_001.fastq.gz
+/path/to/prefix_L001_R1_001.fastq.gz
+/path/to/prefix_L002_R1_001.fastq.gz
+/path/to/prefix_L001_R2_001.fastq.gz
+/path/to/prefix_L002_R2_001.fastq.gz
+/path/to/prefix_L001_I2_001.fastq.gz
+/path/to/prefix_L002_I2_001.fastq.gz
+```
+
+When data for multiple lanes is provided, each lane must have the same number and types of input fastqs.
+
+#### Read Structures
 
 Read Structures are short strings that describe the origin and/or purpose of bases within sequencing reads.  They are made up of a sequence of `<number><operator>` pairs (segments).  Four kinds of operators are recognized:
 
@@ -162,47 +177,27 @@ This is useful if, e.g., FASTQs have been trimmed and/or contain reads of varyin
 
 For more details on Read Structures, and how to validate them, see [this detailed description](https://github.com/fulcrumgenomics/fgbio/wiki/Read-Structures).
 
-One Read Structure must be provided for each input FASTQ file, in the same order.  Matching the set of reads specified in the FASTQ files section above one might specify:
+Read Structures must not be provided when using a path prefix for the input FASTQs.  In that case,
+the read structure will be inferred from the FASTQ name.  See: [Auto-detecting FASTQS from a Path Prefix](#auto-detecting-fastqs-from-a-path-prefix).
+
+When providing the input FASTQs explicitly, one Read Structure must be provided for each input FASTQ file, in the same order.  Matching the set of reads specified in the FASTQ files section above one might specify:
 
 ```shell
   --read-structures +T +T 8B 8B
 ```
 
-All sample barocde segments must be a fixed length.  E.g. `8B+T` is allowed but `10S+B` is not.
+All sample barcode segments must be a fixed length.  E.g. `8B+T` is allowed but `10S+B` is not.
+
+#### Specifying Sample Information
+
+The sample metadata file may be a Sample Sheet or a simple two-column CSV file with headers.
 
 ##### Sample Sheet
 
 Information about the sample(s) to demultiplex is specified within a Sample Sheet. 
 Command line options for demultiplexing may also be passed via the Sample Sheet.
 
-
-###### Specifying Demultiplexing Command Line Options
-
-Demultiplexing options within the Sample Sheet override any command line options and are specified in a `[Demux]` section.
-The name of the command line option must be in the first column with the leading `--` ommited (e.g. `fastqs` or `read-structures`).
-For flag options, the second column must be empty.
-The second column must contain the input value(s) for options that require an input value(s).
-Multiple input values must be space-separated in the second column.
-Additional columns are ignored.
-
-An example follows:
-
-```text
-[Demux]
-fastq,/path/to/i1.fastq.gz /path/to/r1.fastq.gz /path/to/r2.fastq.gz /path/to/i2.fastq.gz,
-read-structures,8B +T +T 8B,
-filter-control-reads,
-```
-
-The order of the FASTQs must match the order read structures.
-
-###### Specifying Sample Information
-
-The sample metadata file may be a Sample Sheet or a simple two-column CSV file with headers.
-
-####### Sample Sheet
-
-The Sample Sheet may haave a `[Demux]` section for command line options, and must have a `[Data]`
+The Sample Sheet may have a `[Demux]` section for command line options, and must have a `[Data]`
 section for sample information.  
 
 The `[Demux]` section must contain a line per command line option.
@@ -211,6 +206,7 @@ The first column must contain the option long name _without_ the leading `--` (e
 The second column contains the option value, or empty if the option takes no value (i.e. a flag).
 If the option accepts multiple values, they must be space separated in the second column.
 The command line options specified in the sample sheet override those provided on the command line.
+The order of the FASTQs must match the order read structures.
 
 The `[Data]` section must contain a header line.
 The `Sample_ID` column must contain a unique, non-empty identifier
@@ -231,7 +227,7 @@ s1,ACTGGTCA,
 s2,ATACGAAC,
 ``` 
 
-####### Simple Two-column CSV
+##### Simple Two-column CSV
 
 For the simple two-column CSV, the `Sample_Barcode` column must contain the unique set of sample barcode bases for the sample(s).
 If multiple sample barcodes are are present (e.g. dual-indexing runs, additional inline sample indices) then the `Sample_Barcode` field should contain the full set of barcode bases expected to be read for the sample.
@@ -258,7 +254,7 @@ then the `Sample_Barcode` field for each sample should be composed as follows:
   {10 base inline index}-{8 base I1 index}-{8 base I2 index}
 ```
 
-##### Full Argument List
+#### Full Argument List
 
 |Argument Name|Required|Default Value| Description                                                                                                                                                                                                                                                                                                                    |
 |-------------|--------|-------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -282,7 +278,7 @@ then the `Sample_Barcode` field for each sample should be composed as follows:
 |--most-unmatched-to-output|No |1000        | Report on the top N most frequently observed unmatched barcode sequences.                                                                                                                                                                                                                                                      |
 
 
-##### Performance Considerations
+#### Performance Considerations
 
 Various `--*-threads` options are available to control the number of threads used by `sgdemux` for various purposes.  The defaults are intended to fully utilize a 32-core machine.  The defaults to the available options do not add up to 32 as several threads are used to read the input FASTQ files and for ancillary purposes.
 
@@ -296,7 +292,7 @@ Currently this tool does not provide a way place a hard limit on the number of t
 
 ### Outputs
 
-##### Demultiplexed FASTQs
+#### Demultiplexed FASTQs
 
 One or more BGZF compressed FASTQ files will be created per sample in the specified output directory. For
 paired end data, the output will have the suffix `_R1.fastq.gz` and `_R2.fastq.gz` for read one and read two
@@ -308,11 +304,11 @@ Samples barcodes, and unique molecular indices (UMIs), will be inserted into the
 sg001:17:A30ZZ:1:4:1234:4567:ACCTAG+TCCTGG 1:N:1:ACGT+TTGA
 ```
 
-##### Metrics
+#### Metrics
 
 Up to four metrics files are generated to help assess run and demultiplexing quality:
 
-###### `per_sample_metrics.tsv` 
+##### `per_sample_metrics.tsv` 
 
 This file is always produced and contains the following columns:
 
@@ -333,7 +329,7 @@ This file is always produced and contains the following columns:
 |`frac_q30_bases`|The fraction of bases in a template with a quality score 30 or above.|
 |`mean_index_base_quality`|The mean quality of index bases.|
 
-###### `run_metrics.tsv`
+##### `run_metrics.tsv`
 
 This file is always produced and contains a small number of summary statistics across the demultiplexing run:
 
@@ -343,7 +339,7 @@ This file is always produced and contains a small number of summary statistics a
 |`failing_reads_omitted`|The number of reads that were omitted for having failed QC.|
 |`total_templates`|The total number of template reads that were output.|
 
-###### `most_frequent_unmatched.tsv`
+##### `most_frequent_unmatched.tsv`
 
 This file is optional and will only be produced if `--most-unmatched-to-output` is not set to zero. It contains the (approximate) counts of the most prevelant observed barcode sequences that did not match to one of the expected barcodes.
 
@@ -352,7 +348,7 @@ This file is optional and will only be produced if `--most-unmatched-to-output` 
 |`barcode`|The observed barcode sequence.|
 |`count`|The approximate number of times that barcode sequences was observed.|
 
-###### `sample_barcode_hop_metrics.tsv`
+##### `sample_barcode_hop_metrics.tsv`
 
 This file is only output for dual-indexed runs.  It contains frequently observed barcodes that are unexpected combinations of expected barcodes.  For example if two samples are present with barcodes `AA-CC` and `GG-TT`, this file would report on observations of `AA-TT` and `GG-CC` if seen.
 
