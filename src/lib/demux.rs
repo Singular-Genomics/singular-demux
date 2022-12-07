@@ -3,6 +3,7 @@
 use std::{borrow::Cow, iter::IntoIterator, vec::Vec};
 
 use anyhow::{ensure, Context, Result};
+use bstr::ByteSlice;
 use itertools::Itertools;
 use log::debug;
 use read_structure::{ReadSegment, ReadStructure, SegmentType};
@@ -187,6 +188,9 @@ pub struct Demultiplexer<'a, M: Matcher> {
     /// If false, unmatched barcodes will not be collected, since there will be no thread to send to if unmatched are not
     /// being collected.
     collect_unmatched: bool,
+    /// If this is true, then the read names across FASTQs will not be enforced to be the same.  This may be useful when
+    /// the read names are known to be the same and performance matters.
+    skip_read_name_check: bool,
 }
 
 impl<'a, M> Demultiplexer<'a, M>
@@ -203,6 +207,7 @@ where
         read_filter_config: &'a DemuxReadFilterConfig,
         matcher: M,
         collect_unmatched: bool,
+        skip_read_name_check: bool,
     ) -> Result<Self> {
         // TODO: use display instead of debug formatting
         ensure!(
@@ -238,6 +243,7 @@ where
             matcher,
             sample_barcode_hop_checker,
             collect_unmatched,
+            skip_read_name_check,
         })
     }
 
@@ -420,6 +426,23 @@ where
             let mut umi_barcode = ExtractedBarcode::new();
             let mut output_reads = vec![];
             let mut qual_counter = BaseQualCounter::new();
+
+            if !self.skip_read_name_check {
+                let first_head = zipped_reads[0].head();
+                let end_index = zipped_reads[0].head().find_byte(b' ').unwrap_or(first_head.len());
+                for read in zipped_reads.iter().dropping(1) {
+                    let cur_head = read.head();
+                    let ok = cur_head.len() == end_index
+                        || (cur_head.len() > end_index && cur_head[end_index] == b' ');
+                    let ok = ok && first_head[0..end_index] == cur_head[0..end_index];
+                    ensure!(
+                        ok,
+                        "Read names did not match: {:?} != {:?}",
+                        String::from_utf8_lossy(first_head),
+                        String::from_utf8_lossy(cur_head)
+                    );
+                }
+            }
 
             // If any filtering was specified, check it here by peeking at the header of the first read in the set of reads.
             match self.apply_filters(&zipped_reads)? {
@@ -692,6 +715,7 @@ mod test {
                             &self.read_filter,
                             matcher,
                             false,
+                            false,
                         )
                         .unwrap(),
                     )
@@ -710,6 +734,7 @@ mod test {
                             &self.output_types,
                             &self.read_filter,
                             matcher,
+                            false,
                             false,
                         )
                         .unwrap(),
@@ -1619,6 +1644,7 @@ mod test {
             &filter_config,
             matcher,
             false,
+            false,
         )
         .unwrap();
         let per_fastq_record_set =
@@ -1654,5 +1680,29 @@ mod test {
             demux_result.per_sample_reads[1].per_fastq_reads[1], r2_reads[1],
             "Sample2 R2 reads should match expected"
         );
+    }
+
+    #[rstest]
+    #[rustfmt::skip]
+    fn test_demux_paired_reads_different_read_names(
+        #[values(MatcherKind::CachedHammingDistance, MatcherKind::PreCompute)]
+        matcher: MatcherKind
+    ) {
+        let read_structures = vec![
+            ReadStructure::from_str("8B100T").unwrap(),
+            ReadStructure::from_str("9B100T").unwrap(),
+        ];
+
+        let mut fq1: OwnedRecord = Fq { name: "frag1", bases: &[&SAMPLE_BARCODE_1[0..8], &[b'A'; 100]].concat(), ..Fq::default() }.to_owned_record();
+        let fq2 = Fq { name: "frag2", bases: &[&SAMPLE_BARCODE_1[8..],  &[b'T'; 100]].concat(), ..Fq::default() }.to_owned_record();
+
+        // mess with the FQ1 read name
+        fq1.head = vec![b'f'];
+        fq1.head.append(&mut fq2.head.clone());
+
+        let context = DemuxTestContext::demux_structures(vec![fq1, fq2], read_structures, matcher);
+        let demuxer = context.demux();
+        let result = demuxer.demultiplex(&context.per_fastq_record_set);
+        assert!(result.is_err());
     }
 }
