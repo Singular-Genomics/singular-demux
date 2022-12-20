@@ -211,6 +211,7 @@ where
     /// Create a new [`Demultiplexer`].
     ///
     /// **Note** the last sample in `samples` _must_ be the undetermined sample.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         samples: &'a [SampleMetadata],
         read_structures: &'a [ReadStructure],
