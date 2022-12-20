@@ -2,7 +2,7 @@
 
 use std::{borrow::Cow, iter::IntoIterator, vec::Vec};
 
-use anyhow::{ensure, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 use bstr::ByteSlice;
 use itertools::Itertools;
 use log::debug;
@@ -36,6 +36,12 @@ impl ExtractedBarcode {
     /// Create a new empty [`ExtractedBarcode`].
     fn new() -> Self {
         Self::default()
+    }
+
+    /// Create a new [`ExtractedBarcode`] from the delimited barcode, with `+` as the delimiter.
+    fn from_delimited(delimited: &[u8]) -> Self {
+        let concatenated = delimited.splitn(2, |c| *c == b'+').collect_vec().concat();
+        ExtractedBarcode { concatenated, delimited: delimited.to_vec() }
     }
 
     /// Add bases to the [`ExtractedBarcode`], this will add to both the concatenated and delimited forms.
@@ -191,6 +197,11 @@ pub struct Demultiplexer<'a, M: Matcher> {
     /// If this is true, then the read names across FASTQs will not be enforced to be the same.  This may be useful when
     /// the read names are known to be the same and performance matters.
     skip_read_name_check: bool,
+    /// If this is true, then the sample barcode is expected to be in the FASTQ read header.  For
+    /// dual indexed data, the barcodes must be `+` (plus) delimited.  Additionally, if true, then
+    /// neither index FASTQ files nor sample barcode segments in the read structure may be
+    /// specified.
+    sample_barcode_in_fastq_header: bool,
 }
 
 impl<'a, M> Demultiplexer<'a, M>
@@ -208,6 +219,7 @@ where
         matcher: M,
         collect_unmatched: bool,
         skip_read_name_check: bool,
+        sample_barcode_in_fastq_header: bool,
     ) -> Result<Self> {
         // TODO: use display instead of debug formatting
         ensure!(
@@ -244,6 +256,7 @@ where
             sample_barcode_hop_checker,
             collect_unmatched,
             skip_read_name_check,
+            sample_barcode_in_fastq_header,
         })
     }
 
@@ -455,6 +468,27 @@ where
                     continue;
                 }
                 None => (),
+            }
+
+            // If desired, get the sample barcode bases from the FASTQ header (of the first read)
+            if self.sample_barcode_in_fastq_header {
+                // get the FASTQ header from the first read
+                let read = &zipped_reads[0];
+                let header =
+                    FastqHeader::try_from(read.head()).with_context(|| {
+                        format!(
+                            "Unable to parse read header: {}",
+                            String::from_utf8_lossy(read.head()),
+                        )
+                    })?;
+                // get the sample barcode from the FASTQ header
+                match header.sample_barcode() {
+                    None => bail!(
+                        "Could not read the sample barcode from the read header: {}",
+                        String::from_utf8_lossy(read.head())
+                    ),
+                    Some(barcode) => sample_barcode = ExtractedBarcode::from_delimited(barcode),
+                };
             }
 
             // Extract the barcodes from the read structure and build up the record to be output
@@ -716,6 +750,7 @@ mod test {
                             matcher,
                             false,
                             false,
+                            self.opts.sample_barcode_in_fastq_header,
                         )
                         .unwrap(),
                     )
@@ -736,6 +771,7 @@ mod test {
                             matcher,
                             false,
                             false,
+                            self.opts.sample_barcode_in_fastq_header,
                         )
                         .unwrap(),
                     )
@@ -831,7 +867,6 @@ mod test {
         let context = DemuxTestContext::demux_structures(vec![fastq_record], read_structures, matcher);
         let demuxer = context.demux();
         let result = demuxer.demultiplex(&context.per_fastq_record_set).unwrap();
-
 
         assert!(result.per_sample_reads[1..].iter().all(demux::OutputPerSampleReads::is_empty),  "Samples 2-4 and UNDETERMINED have no reads assigned");
         assert_eq!(result.per_sample_reads[0].len(),                      1,            "Sample1 contains a single record.");
@@ -1645,6 +1680,7 @@ mod test {
             matcher,
             false,
             false,
+            false,
         )
         .unwrap();
         let per_fastq_record_set =
@@ -1704,5 +1740,50 @@ mod test {
         let demuxer = context.demux();
         let result = demuxer.demultiplex(&context.per_fastq_record_set);
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[rustfmt::skip]
+    fn test_demux_fragment_reads_sample_barcode_from_fastq_header_single_index() {
+        let read_structures = vec![ReadStructure::from_str("100T").unwrap()];
+        let fastq_record = Fq { name: "frag",  bases: &[b'A'; 100], set_bc_to: Some(SAMPLE_BARCODE_1), ..Fq::default() }.to_owned_record();
+        let mut context = DemuxTestContext::demux_structures(vec![fastq_record], read_structures, MatcherKind::CachedHammingDistance);
+        context.opts.sample_barcode_in_fastq_header = true;
+        let demuxer = context.demux();
+        let result = demuxer.demultiplex(&context.per_fastq_record_set).unwrap();
+
+        assert!(result.per_sample_reads[1..].iter().all(demux::OutputPerSampleReads::is_empty),  "Samples 2-4 and UNDETERMINED have no reads assigned");
+        assert_eq!(result.per_sample_reads[0].len(),                      1,            "Sample1 contains a single record.");
+        assert_eq!(result.per_sample_reads[0].per_fastq_reads.len(),      1,            "Sample1 has only a single output fastq expected.");
+        assert_eq!(result.per_sample_reads[0].per_fastq_reads[0][0].seq,  &[b'A'; 100], "Sample1 seq has had the barcode removed");
+        assert_eq!(result.per_sample_reads[0].per_fastq_reads[0][0].qual, &[b'!'; 100], "Sample1 quals has had the barcode removed");
+
+        let header = FastqHeader::try_from(result.per_sample_reads[0].per_fastq_reads[0][0].head.as_slice()).unwrap();
+
+        assert!(header.umi().is_none(),                            "Fastq header has no UMI set");
+        assert_eq!(header.sample_barcode(), Some(SAMPLE_BARCODE_1),"Set barcode matches Sample1");
+    }
+
+    #[rstest]
+    #[rustfmt::skip]
+    fn test_demux_fragment_reads_sample_barcode_from_fastq_header_dual_index() {
+        let read_structures = vec![ReadStructure::from_str("100T").unwrap()];
+        let (index1, index2) = SAMPLE_BARCODE_1.split_at(10);
+        let delimited_sample_barcode = [index1, &[b'+'], index2].concat();
+        let fastq_record = Fq { name: "frag",  bases: &[b'A'; 100], set_bc_to: Some(&delimited_sample_barcode), ..Fq::default() }.to_owned_record();
+        let mut context = DemuxTestContext::demux_structures(vec![fastq_record], read_structures, MatcherKind::CachedHammingDistance);
+        context.opts.sample_barcode_in_fastq_header = true;
+        let demuxer = context.demux();
+        let result = demuxer.demultiplex(&context.per_fastq_record_set).unwrap();
+
+        assert!(result.per_sample_reads[1..].iter().all(demux::OutputPerSampleReads::is_empty),  "Samples 2-4 and UNDETERMINED have no reads assigned");
+        assert_eq!(result.per_sample_reads[0].len(),                      1,            "Sample1 contains a single record.");
+        assert_eq!(result.per_sample_reads[0].per_fastq_reads.len(),      1,            "Sample1 has only a single output fastq expected.");
+        assert_eq!(result.per_sample_reads[0].per_fastq_reads[0][0].seq,  &[b'A'; 100], "Sample1 seq has had the barcode removed");
+        assert_eq!(result.per_sample_reads[0].per_fastq_reads[0][0].qual, &[b'!'; 100], "Sample1 quals has had the barcode removed");
+
+        let header = FastqHeader::try_from(result.per_sample_reads[0].per_fastq_reads[0][0].head.as_slice()).unwrap();
+        assert!(header.umi().is_none(),                            "Fastq header has no UMI set");
+        assert_eq!(header.sample_barcode(), Some(delimited_sample_barcode.as_slice()),"Set barcode matches Sample1");
     }
 }

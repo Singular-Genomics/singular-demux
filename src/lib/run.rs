@@ -37,7 +37,7 @@ pub fn run(opts: Opts) -> Result<()> {
     //
     // IMPORTANT: opts.fastqs should no longer be used past this point
     let input_fastq_groups: Vec<FastqsAndReadStructure> =
-        Opts::from(opts.fastqs, opts.read_structures)?;
+        Opts::from(opts.fastqs, opts.read_structures, opts.sample_barcode_in_fastq_header)?;
     opts.read_structures = input_fastq_groups.iter().map(|g| g.read_structure.clone()).collect();
     opts.fastqs = vec![]; // so we don't use it later incorrectly
 
@@ -57,7 +57,8 @@ pub fn run(opts: Opts) -> Result<()> {
     );
     ensure!(!opts.read_structures.is_empty(), "At least one read structure must be specified");
     ensure!(
-        opts.read_structures.iter().any(|s| s.sample_barcodes().count() > 0),
+        opts.sample_barcode_in_fastq_header
+            || opts.read_structures.iter().any(|s| s.sample_barcodes().count() > 0),
         "No sample barcodes found in read structures"
     );
     ensure!(
@@ -89,6 +90,7 @@ pub fn run(opts: Opts) -> Result<()> {
     );
     ensure!(
         is_no_demux
+            || opts.sample_barcode_in_fastq_header
             || opts
                 .read_structures
                 .iter()
@@ -188,6 +190,7 @@ pub fn run(opts: Opts) -> Result<()> {
             matcher,
             true,
             opts.skip_read_name_check,
+            opts.sample_barcode_in_fastq_header,
         )?;
         Box::new(demuxer)
     } else {
@@ -206,6 +209,7 @@ pub fn run(opts: Opts) -> Result<()> {
             matcher,
             true,
             opts.skip_read_name_check,
+            opts.sample_barcode_in_fastq_header,
         )?;
         Box::new(demuxer)
     };
