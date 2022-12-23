@@ -41,6 +41,18 @@ pub fn run(opts: Opts) -> Result<()> {
     opts.read_structures = input_fastq_groups.iter().map(|g| g.read_structure.clone()).collect();
     opts.fastqs = vec![]; // so we don't use it later incorrectly
 
+    // Print some information about the read structures and associated FASTQs
+    let read_structure_str: String =
+        input_fastq_groups.iter().map(|g| format!(" {}", g.read_structure)).into_iter().collect();
+    info!("Using read structures:{}", read_structure_str);
+    for input_fastq_group in &input_fastq_groups {
+        info!("  Read structure: {}", input_fastq_group.read_structure);
+        info!("  FASTQs:");
+        for path in &input_fastq_group.fastqs {
+            info!("    {}", path.to_string_lossy());
+        }
+    }
+
     // If there is only a single sample in the metadata and that sample has no barcode
     // specified the tool is being run to filter/mask/etc. _without_ demultiplexing
     // and so all accepted records will go into file(s) for one sample with no Undetermined
