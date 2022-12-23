@@ -1,6 +1,6 @@
 //! Functionality directly related to demultiplexing a [`RecordSet`] of FASTQ records.
 
-use std::{borrow::Cow, iter::IntoIterator, vec::Vec};
+use std::{borrow::Cow, iter::IntoIterator, ops::Index, vec::Vec};
 
 use anyhow::{bail, ensure, Context, Result};
 use bstr::ByteSlice;
@@ -40,7 +40,15 @@ impl ExtractedBarcode {
 
     /// Create a new [`ExtractedBarcode`] from the delimited barcode, with `+` as the delimiter.
     fn from_delimited(delimited: &[u8]) -> Self {
-        let concatenated = delimited.splitn(2, |c| *c == b'+').collect_vec().concat();
+        let concatenated = match delimited.find_byte(b'+') {
+            None => delimited.to_vec(),
+            Some(index) => {
+                let mut buffer: Vec<u8> = Vec::with_capacity(delimited.len() - 1);
+                buffer.extend_from_slice(&delimited[..index]);
+                buffer.extend_from_slice(&delimited[index + 1..]);
+                buffer
+            }
+        };
         ExtractedBarcode { concatenated, delimited: delimited.to_vec() }
     }
 
