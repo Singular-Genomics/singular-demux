@@ -1,6 +1,6 @@
 //! Functionality directly related to demultiplexing a [`RecordSet`] of FASTQ records.
 
-use std::{borrow::Cow, iter::IntoIterator, ops::Index, vec::Vec};
+use std::{borrow::Cow, iter::IntoIterator, vec::Vec};
 
 use anyhow::{bail, ensure, Context, Result};
 use bstr::ByteSlice;
