@@ -271,11 +271,10 @@ impl Opts {
 
             // Ensure that if the sample barcodes are to be extracted from the FASTQ header then
             // no sample barcode segments should be given
-            ensure!(
-                !sample_barcode_in_fastq_header
-                    || read_structures.iter().all(|g| g.sample_barcodes().count() == 0),
-                "Read structures may not contain sample barcode segment(s) when extracting sample barcodes from the FASTQ header"
-            );
+            if sample_barcode_in_fastq_header {
+                ensure!(read_structures.iter().all(|g| g.sample_barcodes().count() == 0),
+                    "Read structures may not contain sample barcode segment(s) when extracting sample barcodes from the FASTQ header");
+            }
 
             FastqsAndReadStructure::zip(&fastqs, &read_structures)
         } else if fastqs.iter().all(|f| !f.is_file()) {
