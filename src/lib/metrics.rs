@@ -21,8 +21,8 @@
 //!
 //! All metrics are writable to files.
 
-use std::path::Path;
 use std::thread::JoinHandle;
+use std::{collections::HashMap, path::Path};
 
 use ahash::{AHashMap, AHashSet};
 use anyhow::Result;
@@ -208,11 +208,11 @@ pub struct DemuxedGroupMetrics<'a> {
 /// Write the per sample metrics.
 fn write_per_group_metrics<P: AsRef<Path>>(
     samples: &[SampleMetadata],
-    total_templates: usize,
     per_group_metrics: &[DemuxedGroupSampleMetrics],
     output_dir: &P,
     filename: &str,
 ) -> Result<()> {
+    let total_templates = per_group_metrics.iter().map(|m| m.total_matches).sum();
     // Get the group with the highest template count. Don't include unmatched when determining
     // the "best" barcode.
     let best_barcode_count = per_group_metrics[0..per_group_metrics.len() - 1]
@@ -245,7 +245,7 @@ fn build_per_project_metrics(
 ) -> Result<(Vec<SampleMetadata>, Vec<DemuxedGroupSampleMetrics>)> {
     let mut project_to_metric: AHashMap<Option<&String>, DemuxedGroupSampleMetrics> =
         AHashMap::new();
-    let mut project_to_sample: AHashMap<Option<&String>, SampleMetadata> = AHashMap::new();
+    let mut project_to_sample: HashMap<Option<&String>, SampleMetadata> = HashMap::new();
     let num_per_group_metrics = per_sample_metrics.len();
 
     // Iterate over all samples, except the undetermined sample
@@ -266,7 +266,7 @@ fn build_per_project_metrics(
                 project_to_sample.insert(key, sample);
                 project_to_metric.insert(key, metric.clone());
             }
-            Some(project_metric) => project_metric.update_with_self(metric.clone()),
+            Some(project_metric) => project_metric.update_with(metric),
         };
     }
 
@@ -277,9 +277,9 @@ fn build_per_project_metrics(
     // Sort by project name
     for key in project_to_metric.keys().sorted() {
         let metric = project_to_metric.get(key).unwrap();
-        let sample = project_to_sample.get(key).unwrap();
+        let sample = project_to_sample.remove(key).unwrap();
         project_metrics.push(metric.clone());
-        project_samples.push(sample.clone());
+        project_samples.push(sample);
     }
 
     // add the undetermined sample to keep it seperate
@@ -316,7 +316,7 @@ impl<'a> DemuxedGroupMetrics<'a> {
         self.num_reads_filtered_as_control += other.num_reads_filtered_as_control;
         self.total_templates += other.total_templates;
         for (s, o) in self.per_sample_metrics.iter_mut().zip(other.per_sample_metrics.into_iter()) {
-            s.update_with_self(o);
+            s.update_with(&o);
         }
 
         if let Some(ref mut sample_barcode_hop_tracker) = self.sample_barcode_hop_tracker {
@@ -329,7 +329,7 @@ impl<'a> DemuxedGroupMetrics<'a> {
     /// Write the metrics files associated with the [`DemuxedGroupMetrics`].
     ///
     /// This will create a `per_sample_metrics.tsv` file, a `per_project_metrics.tsv`,
-    /// a `metrics.tsv` file, a and optionally an `sample_barcode_hop_metrics.tsv`
+    /// a `metrics.tsv` file, and optionally an `sample_barcode_hop_metrics.tsv`
     /// file (if dual-indexed) in the provided `output_dir`.
     pub fn write_metrics_files<P: AsRef<Path>>(
         self,
@@ -351,13 +351,7 @@ impl<'a> DemuxedGroupMetrics<'a> {
 
         // Write the per sample metrics
         let filename = [prefix.to_string(), "per_sample_metrics.tsv".to_string()].concat();
-        write_per_group_metrics(
-            samples,
-            self.total_templates,
-            &self.per_sample_metrics,
-            &output_dir,
-            &filename,
-        )?;
+        write_per_group_metrics(samples, &self.per_sample_metrics, &output_dir, &filename)?;
 
         // Build then write the per-project metrics
         let (per_project_samples, per_project_metrics) =
@@ -365,7 +359,6 @@ impl<'a> DemuxedGroupMetrics<'a> {
         let filename = [prefix.to_string(), "per_project_metrics.tsv".to_string()].concat();
         write_per_group_metrics(
             &per_project_samples,
-            self.total_templates,
             &per_project_metrics,
             &output_dir,
             &filename,
@@ -416,7 +409,7 @@ pub struct DemuxedGroupSampleMetrics {
 
 impl DemuxedGroupSampleMetrics {
     /// Update this [`DemuxedGroupSampleMetrics`] with another [`DemuxedGroupSampleMetrics`].
-    pub fn update_with_self(&mut self, other: Self) {
+    pub fn update_with(&mut self, other: &Self) {
         self.base_qual_counter.update_with_self(&other.base_qual_counter);
         self.perfect_matches += other.perfect_matches;
         self.one_mismatch_matches += other.one_mismatch_matches;

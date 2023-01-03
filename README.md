@@ -339,8 +339,9 @@ The `per_sample_metrics.tsv` file produces a row per sample.
 
 The `per_project_metrics.tsv` file aggregates the metrics by project (aggregates the metrics across
 samples with the same project) and has the same columns as [per_sample_metrics.tsv](#per_sample_metricstsv).
-In this case, the `barcode_name` and `library_name` will contain the project name (or `None` if no
+In this case, `barcode_name` and `library_name` will contain the project name (or `None` if no
 project is given).
+THe `barcode` will contain all `N`s. 
 The undetermined sample will not be aggregated with any other sample.
 
 ##### `run_metrics.tsv`
