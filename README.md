@@ -25,6 +25,7 @@ This repository is home to the `sgdemux` tool for demultiplexing sequencing data
       * [Demultiplexed FASTQs](#demultiplexed-fastqs)
       * [Metrics](#metrics)
         * [per_sample_metrics.tsv](#per_sample_metricstsv)
+        * [per_project_metrics.tsv](#per_project_metricstsv)
         * [run_metrics.tsv](#run_metricstsv)
         * [most_frequent_unmatched.tsv](#most_frequent_unmatchedtsv)
         * [sample_barcode_hop_metrics.tsv](#sample_barcode_hop_metricstsv)
@@ -309,11 +310,11 @@ sg001:17:A30ZZ:1:4:1234:4567:ACCTAG+TCCTGG 1:N:1:ACGT+TTGA
 
 #### Metrics
 
-Up to four metrics files are generated to help assess run and demultiplexing quality:
+Up to five metrics files are generated to help assess run and demultiplexing quality:
 
-##### `per_sample_metrics.tsv` 
+##### `per_sample_metrics.tsv`
 
-This file is always produced and contains the following columns:
+This file always produced and contains the following columns:
 
 |Column|Description|
 |------|-----------|
@@ -331,6 +332,17 @@ This file is always produced and contains the following columns:
 |`frac_q20_bases`|The fraction of bases in a template with a quality score 20 or above.|
 |`frac_q30_bases`|The fraction of bases in a template with a quality score 30 or above.|
 |`mean_index_base_quality`|The mean quality of index bases.|
+
+The `per_sample_metrics.tsv` file produces a row per sample.
+
+##### `per_project_metrics.tsv`
+
+The `per_project_metrics.tsv` file aggregates the metrics by project (aggregates the metrics across
+samples with the same project) and has the same columns as [per_sample_metrics.tsv](#per_sample_metricstsv).
+In this case, `barcode_name` and `library_name` will contain the project name (or `None` if no
+project is given).
+THe `barcode` will contain all `N`s. 
+The undetermined sample will not be aggregated with any other sample.
 
 ##### `run_metrics.tsv`
 
