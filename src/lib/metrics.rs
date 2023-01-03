@@ -174,8 +174,9 @@ impl UnmatchedCounter {
     }
 
     /// Write the top `n` unmatched barcodes to a `most_frequent_unmatched.tsv` file in the specified directory.
-    pub fn to_file<P: AsRef<Path>>(self, output_dir: P, n: usize) -> Result<()> {
-        let output_path = output_dir.as_ref().join("most_frequent_unmatched.tsv");
+    pub fn to_file<P: AsRef<Path>>(self, output_dir: P, n: usize, prefix: &str) -> Result<()> {
+        let filename = [prefix.to_string(), "most_frequent_unmatched.tsv".to_string()].concat();
+        let output_path = output_dir.as_ref().join(filename);
         let delim = DelimFile::default();
         delim.write_tsv(
             &output_path,
@@ -245,6 +246,7 @@ impl<'a> DemuxedGroupMetrics<'a> {
         self,
         samples: &[SampleMetadata],
         output_dir: P,
+        prefix: &str,
     ) -> Result<()> {
         // Write the top level metrics file
         let run_metrics = RunMetrics {
@@ -253,7 +255,8 @@ impl<'a> DemuxedGroupMetrics<'a> {
             total_templates: self.total_templates,
         };
 
-        let output_path = output_dir.as_ref().join("metrics.tsv");
+        let filename = [prefix.to_string(), "metrics.tsv".to_string()].concat();
+        let output_path = output_dir.as_ref().join(filename);
         let delim = DelimFile::default();
         delim.write_tsv(&output_path, std::iter::once(run_metrics))?;
 
@@ -271,15 +274,18 @@ impl<'a> DemuxedGroupMetrics<'a> {
             })
             .collect();
 
-        let output_path = output_dir.as_ref().join("per_sample_metrics.tsv");
+        let filename = [prefix.to_string(), "per_sample_metrics.tsv".to_string()].concat();
+        let output_path = output_dir.as_ref().join(filename);
         let delim = DelimFile::default();
         delim.write_tsv(&output_path, per_sample_metrics)?;
 
         // Optionally write the index hop file
         if let Some(sample_barcode_hop_tracker) = self.sample_barcode_hop_tracker {
-            let output_file = output_dir.as_ref().join("sample_barcode_hop_metrics.tsv");
+            let filename =
+                [prefix.to_string(), "sample_barcode_hop_metrics.tsv".to_string()].concat();
+            let output_path = output_dir.as_ref().join(filename);
             delim.write_tsv(
-                &output_file,
+                &output_path,
                 sample_barcode_hop_tracker
                     .count_tracker
                     .into_iter()
