@@ -131,7 +131,7 @@ pub struct Opts {
 
     /// Mask template bases with quality scores less than specified value(s).
     ///
-    /// Sample /// barcode/index and UMI bases are never masked. If provided either a single value,
+    /// Sample barcode/index and UMI bases are never masked. If provided either a single value,
     /// or one value per FASTQ must be provided.
     #[clap(long, short = 'M', required = false, multiple = true, display_order = 11)]
     pub quality_mask_threshold: Vec<u8>,

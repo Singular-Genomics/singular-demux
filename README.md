@@ -134,17 +134,19 @@ The FASTQs must be named `<dir>/<prefix>_L00<lane>_<kind><kind-number>_001.fastq
 one of R (read/template), I (index/sample barcode), or U (umi/molecular barcode). 
 
 The Read Structure must not be given on the the command line or Sample Sheet.  Instead, the Read 
-Structure will be derived file names (kind and kind number), with the full read length used for the given kind.
-E.g. if the following FASTQs are present with path prefix `/path/to/prefix`:
+Structure will be derived from file names (kind and kind number), with the full read length used for the given kind.
+The derived Read Structure and FASTQs will be ordered first by `kind` (I then R then U), second by
+read number (e.g. R1 before R2).  This is important for command line options that can be specified once per read kind and number.
+ E.g. if the following FASTQs are present with path prefix `/path/to/prefix`:
 
 ```
 /path/to/prefix_L001_I1_001.fastq.gz
+/path/to/prefix_L001_I2_001.fastq.gz
 /path/to/prefix_L001_R1_001.fastq.gz
 /path/to/prefix_L001_R2_001.fastq.gz
-/path/to/prefix_L001_I2_001.fastq.gz
 ```
 
-then the `+B +T +T +B` read structure will be used.  Since this tool requires all sample barcode
+then the `+B +B +T +T` read structure will be used.  Since this tool requires all sample barcode
 segments to have a fixed length, the first read in any index/sample-barcode FASTQ will be examined
 and its length used as the expected sample barcode length.
 
@@ -153,12 +155,12 @@ Furthermore, multiple lanes may be given and will be used for demultiplexing:
 ```
 /path/to/prefix_L001_I1_001.fastq.gz
 /path/to/prefix_L002_I1_001.fastq.gz
+/path/to/prefix_L001_I2_001.fastq.gz
+/path/to/prefix_L002_I2_001.fastq.gz
 /path/to/prefix_L001_R1_001.fastq.gz
 /path/to/prefix_L002_R1_001.fastq.gz
 /path/to/prefix_L001_R2_001.fastq.gz
 /path/to/prefix_L002_R2_001.fastq.gz
-/path/to/prefix_L001_I2_001.fastq.gz
-/path/to/prefix_L002_I2_001.fastq.gz
 ```
 
 When data for multiple lanes is provided, each lane must have the same number and types of input fastqs.
