@@ -205,6 +205,94 @@ pub struct DemuxedGroupMetrics<'a> {
     pub sample_barcode_hop_tracker: Option<SampleBarcodeHopTracker<'a>>,
 }
 
+/// Write the per sample metrics.
+fn write_per_group_metrics<P: AsRef<Path>>(
+    samples: &[SampleMetadata],
+    total_templates: usize,
+    per_group_metrics: &[DemuxedGroupSampleMetrics],
+    output_dir: &P,
+    filename: &str,
+) -> Result<()> {
+    // Get the group with the highest template count. Don't include unmatched when determining
+    // the "best" barcode.
+    let best_barcode_count = per_group_metrics[0..per_group_metrics.len() - 1]
+        .iter()
+        .max_by_key(|s| s.total_matches)
+        .map_or(0, |s| s.total_matches);
+
+    // Build per group metrics to output.  We need to derive (e.g. ratio, percentage) values here.
+    let per_group_metrics: Vec<SampleMetricsProcessed> = samples
+        .iter()
+        .zip(per_group_metrics.iter())
+        .map(|(sample, metrics)| metrics.as_processed(total_templates, best_barcode_count, sample))
+        .collect();
+
+    // Finally output it to a file
+    let output_path = output_dir.as_ref().join(filename);
+    let delim = DelimFile::default();
+    delim.write_tsv(&output_path, per_group_metrics)?;
+
+    Ok(())
+}
+
+/// Builds a new set of "samples" and demux metrics by grouping input samples by project.  Each
+/// new sample corresponds to a unique project, and the associated metric are the sum of values
+/// for samples with the same project.  The undetermined sample is not grouped with any other
+/// sample.
+fn build_per_project_metrics(
+    samples: &[SampleMetadata],
+    per_sample_metrics: &[DemuxedGroupSampleMetrics],
+) -> Result<(Vec<SampleMetadata>, Vec<DemuxedGroupSampleMetrics>)> {
+    let mut project_to_metric: AHashMap<Option<&String>, DemuxedGroupSampleMetrics> =
+        AHashMap::new();
+    let mut project_to_sample: AHashMap<Option<&String>, SampleMetadata> = AHashMap::new();
+    let num_per_group_metrics = per_sample_metrics.len();
+
+    // Iterate over all samples, except the undetermined sample
+    for (sample, metric) in
+        samples.iter().zip(per_sample_metrics.iter()).take(num_per_group_metrics - 1)
+    {
+        let key = sample.project.as_ref();
+        match project_to_metric.get_mut(&key) {
+            None => {
+                // Build a new dummy sample for this project
+                let project = sample.project.clone().unwrap_or_else(|| String::from("None"));
+                let sample = SampleMetadata::new_allow_invalid_bases(
+                    project,
+                    BString::from(vec![b'N'; samples[0].barcode.len()]),
+                    project_to_metric.len(),
+                )?;
+                // Add the sample and current metric to the maps
+                project_to_sample.insert(key, sample);
+                project_to_metric.insert(key, metric.clone());
+            }
+            Some(project_metric) => project_metric.update_with_self(metric.clone()),
+        };
+    }
+
+    let mut project_metrics: Vec<DemuxedGroupSampleMetrics> =
+        Vec::with_capacity(project_to_metric.len() + 1);
+    let mut project_samples: Vec<SampleMetadata> = Vec::with_capacity(project_to_metric.len() + 1);
+
+    // Sort by project name
+    for key in project_to_metric.keys().sorted() {
+        let metric = project_to_metric.get(key).unwrap();
+        let sample = project_to_sample.get(key).unwrap();
+        project_metrics.push(metric.clone());
+        project_samples.push(sample.clone());
+    }
+
+    // add the undetermined sample to keep it seperate
+    {
+        let undetermined_sample = &samples[per_sample_metrics.len() - 1];
+        let undetermined_metric = &per_sample_metrics[per_sample_metrics.len() - 1];
+        project_samples.push(undetermined_sample.clone());
+        project_metrics.push(undetermined_metric.clone());
+    }
+
+    Ok((project_samples, project_metrics))
+}
+
 impl<'a> DemuxedGroupMetrics<'a> {
     /// Create a [`DemuxedGroupMetrics`] with a reserved capacity equal to the number of samples that it will track.
     pub fn with_capacity(
@@ -240,7 +328,8 @@ impl<'a> DemuxedGroupMetrics<'a> {
 
     /// Write the metrics files associated with the [`DemuxedGroupMetrics`].
     ///
-    /// This will create a `per_sample_metrics.tsv` file, a `metrics.tsv` file, and optionally an `sample_barcode_hop_metrics.tsv`
+    /// This will create a `per_sample_metrics.tsv` file, a `per_project_metrics.tsv`,
+    /// a `metrics.tsv` file, a and optionally an `sample_barcode_hop_metrics.tsv`
     /// file (if dual-indexed) in the provided `output_dir`.
     pub fn write_metrics_files<P: AsRef<Path>>(
         self,
@@ -260,24 +349,27 @@ impl<'a> DemuxedGroupMetrics<'a> {
         let delim = DelimFile::default();
         delim.write_tsv(&output_path, std::iter::once(run_metrics))?;
 
-        // Write the per sample metrics (don't include unmatched when determining the "best" barcode.
-        let best_barcode_count = self.per_sample_metrics[0..self.per_sample_metrics.len() - 1]
-            .iter()
-            .max_by_key(|s| s.total_matches)
-            .map_or(0, |s| s.total_matches);
-
-        let per_sample_metrics: Vec<_> = samples
-            .iter()
-            .zip(self.per_sample_metrics.into_iter())
-            .map(|(sample, metrics)| {
-                metrics.into_processed(self.total_templates, best_barcode_count, sample)
-            })
-            .collect();
-
+        // Write the per sample metrics
         let filename = [prefix.to_string(), "per_sample_metrics.tsv".to_string()].concat();
-        let output_path = output_dir.as_ref().join(filename);
-        let delim = DelimFile::default();
-        delim.write_tsv(&output_path, per_sample_metrics)?;
+        write_per_group_metrics(
+            samples,
+            self.total_templates,
+            &self.per_sample_metrics,
+            &output_dir,
+            &filename,
+        )?;
+
+        // Build then write the per-project metrics
+        let (per_project_samples, per_project_metrics) =
+            build_per_project_metrics(samples, &self.per_sample_metrics)?;
+        let filename = [prefix.to_string(), "per_project_metrics.tsv".to_string()].concat();
+        write_per_group_metrics(
+            &per_project_samples,
+            self.total_templates,
+            &per_project_metrics,
+            &output_dir,
+            &filename,
+        )?;
 
         // Optionally write the index hop file
         if let Some(sample_barcode_hop_tracker) = self.sample_barcode_hop_tracker {
@@ -344,8 +436,8 @@ impl DemuxedGroupSampleMetrics {
     }
 
     /// Convert [`DemuxedGroupSampleMetrics`] into [`SampleMetricsProcessed`].
-    fn into_processed(
-        self,
+    fn as_processed(
+        &self,
         total_templates: usize,
         best_barcode_template_count: usize,
         sample_metadata: &SampleMetadata,
