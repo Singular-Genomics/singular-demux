@@ -181,7 +181,8 @@ impl UnmatchedCounter {
         prefix: Option<String>,
     ) -> Result<()> {
         let filename =
-            [prefix.unwrap_or("".to_string()), "most_frequent_unmatched.tsv".to_string()].concat();
+            [prefix.unwrap_or_else(|| "".to_string()), "most_frequent_unmatched.tsv".to_string()]
+                .concat();
         let output_path = output_dir.as_ref().join(filename);
         let delim = DelimFile::default();
         delim.write_tsv(
@@ -262,7 +263,7 @@ impl<'a> DemuxedGroupMetrics<'a> {
         };
 
         let filename =
-            [prefix.clone().unwrap_or("".to_string()), "metrics.tsv".to_string()].concat();
+            [prefix.clone().unwrap_or_else(|| "".to_string()), "metrics.tsv".to_string()].concat();
         let output_path = output_dir.as_ref().join(filename);
         let delim = DelimFile::default();
         delim.write_tsv(&output_path, std::iter::once(run_metrics))?;
@@ -281,18 +282,22 @@ impl<'a> DemuxedGroupMetrics<'a> {
             })
             .collect();
 
-        let filename =
-            [prefix.clone().unwrap_or("".to_string()), "per_sample_metrics.tsv".to_string()]
-                .concat();
+        let filename = [
+            prefix.clone().unwrap_or_else(|| "".to_string()),
+            "per_sample_metrics.tsv".to_string(),
+        ]
+        .concat();
         let output_path = output_dir.as_ref().join(filename);
         let delim = DelimFile::default();
         delim.write_tsv(&output_path, per_sample_metrics)?;
 
         // Optionally write the index hop file
         if let Some(sample_barcode_hop_tracker) = self.sample_barcode_hop_tracker {
-            let filename =
-                [prefix.unwrap_or("".to_string()), "sample_barcode_hop_metrics.tsv".to_string()]
-                    .concat();
+            let filename = [
+                prefix.unwrap_or_else(|| "".to_string()),
+                "sample_barcode_hop_metrics.tsv".to_string(),
+            ]
+            .concat();
             let output_path = output_dir.as_ref().join(filename);
             delim.write_tsv(
                 &output_path,
