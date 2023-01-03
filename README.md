@@ -310,7 +310,7 @@ sg001:17:A30ZZ:1:4:1234:4567:ACCTAG+TCCTGG 1:N:1:ACGT+TTGA
 
 #### Metrics
 
-Up to four metrics files are generated to help assess run and demultiplexing quality:
+Up to five metrics files are generated to help assess run and demultiplexing quality:
 
 ##### `per_sample_metrics.tsv`
 
