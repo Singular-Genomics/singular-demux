@@ -320,9 +320,13 @@ pub fn run(opts: Opts) -> Result<()> {
     pool.stop_pool()?;
 
     info!("Writing stats");
-    metrics.write_metrics_files(&samples, &opts.output_dir)?;
+    metrics.write_metrics_files(&samples, &opts.output_dir, opts.metric_prefix.clone())?;
     if let Some(unmatched_counter) = unmatched_counter {
-        unmatched_counter.collect().to_file(&opts.output_dir, opts.most_unmatched_to_output)?;
+        unmatched_counter.collect().to_file(
+            &opts.output_dir,
+            opts.most_unmatched_to_output,
+            opts.metric_prefix,
+        )?;
     }
     Ok(())
 }

@@ -234,6 +234,10 @@ pub struct Opts {
     /// specified.
     #[clap(long, display_order = 32)]
     pub sample_barcode_in_fastq_header: bool,
+    
+    /// Prepend this prefix to all output metric file names.
+    #[clap(long, display_order = 31)]
+    pub metric_prefix: Option<String>,
 }
 
 impl Opts {
