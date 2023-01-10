@@ -477,6 +477,9 @@ mod test {
         assert_eq!(SampleSheet::find_section(&records, "[End]"), None);
     }
 
+    // TODO: uncomment when https://github.com/clap-rs/clap/pull/4618 is released and the clap
+    // dependency is updated
+    /*
     #[test]
     fn test_demux_missing_fastqs_and_read_structures() {
         // It's ok that we do not have any read structures, as it may be a path prefix.
@@ -501,6 +504,7 @@ mod test {
             assert_eq!(args, "--fastqs".to_string());
         }
     }
+    */
 
     #[test]
     fn test_demux_missing_read_structure() {
@@ -553,6 +557,21 @@ mod test {
         ];
 
         let opts = SampleSheet::parse_and_update_demux_options(&records, Opts::default()).unwrap();
+        assert_eq!(opts.fastqs, vec![PathBuf::from("/dev/null")]);
+        assert_eq!(opts.read_structures.iter().map(|r| format!("{}", r)).join(" "), "8B +T");
+        assert_eq!(opts.allowed_mismatches, 123);
+    }
+
+    #[test]
+    fn test_demux_existing_fastqs() {
+        // FASTQS is given on the command line, so already exists in Opts.  The sample sheet
+        // should parse just fine without it.
+        let opts = Opts { fastqs: vec![PathBuf::from("/dev/null")], ..Opts::default() };
+        let records: Vec<StringRecord> = vec![
+            StringRecord::from(vec!["read-structures", "8B +T"]),
+            StringRecord::from(vec!["allowed-mismatches", "123"]),
+        ];
+        let opts = SampleSheet::parse_and_update_demux_options(&records, opts).unwrap();
         assert_eq!(opts.fastqs, vec![PathBuf::from("/dev/null")]);
         assert_eq!(opts.read_structures.iter().map(|r| format!("{}", r)).join(" "), "8B +T");
         assert_eq!(opts.allowed_mismatches, 123);
