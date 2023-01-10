@@ -90,8 +90,13 @@ For support please contact: care@singulargenomics.com
 #[derive(Parser, Debug, Clone)]
 #[clap(name = TOOL_NAME, version = built_info::VERSION.as_str(), about=SHORT_USAGE, long_about=LONG_USAGE, term_width=0)]
 pub struct Opts {
+    // NB: cannot set `required = True` for `fastqs` due to an issue with how clap updates
+    // the command line arguments when getting them from a sample sheet.  This occurs when
+    // trying to use the `try_update_from` on `Opts`.  A reproducible example independent
+    // of this code base can be found here: https://github.com/clap-rs/clap/issues/4617. The
+    // fix can be found here: https://github.com/clap-rs/clap/pull/4618.
     /// Path to the input FASTQs, or path prefix if not a file.
-    #[clap(long, short = 'f', display_order = 1, required = true, multiple_values = true)]
+    #[clap(long, short = 'f', display_order = 1, required = false, multiple_values = true)]
     pub fastqs: Vec<PathBuf>,
 
     /// Path to the sample metadata.

@@ -255,7 +255,11 @@ impl AsRef<SampleMetadata> for SampleMetadata {
 
 /// Validates a set of samples ([`SampleMetadata`] objects).
 ///
-/// If the `min_mismatch` is provided, the barcodes will be validated to ensure that there are no collisions.
+/// If the `min_mismatch` is provided, the barcodes will be validated to ensure that there are no
+/// collisions.
+///
+/// If there is more than one sample, or we have one sample with an actual barcode then add in
+/// an undetermined sample.
 ///
 /// # Errors
 ///
