@@ -36,8 +36,12 @@ pub fn run(opts: Opts) -> Result<()> {
     // kind number to support serially processing multiple lanes.
     //
     // IMPORTANT: opts.fastqs should no longer be used past this point
-    let input_fastq_groups: Vec<FastqsAndReadStructure> =
-        Opts::from(opts.fastqs, opts.read_structures, opts.sample_barcode_in_fastq_header)?;
+    let input_fastq_groups: Vec<FastqsAndReadStructure> = Opts::from(
+        &opts.fastqs,
+        &opts.read_structures,
+        opts.sample_barcode_in_fastq_header,
+        &opts.lane,
+    )?;
     opts.read_structures = input_fastq_groups.iter().map(|g| g.read_structure.clone()).collect();
     opts.fastqs = vec![]; // so we don't use it later incorrectly
 
@@ -119,7 +123,10 @@ pub fn run(opts: Opts) -> Result<()> {
         check_bgzf(fastq)?;
     }
 
-    info!("Creating writer threads");
+    info!(
+        "Creating writer threads (threads for writing/compressing: {}/{}",
+        opts.writer_threads, opts.compressor_threads
+    );
     let writers: Result<Vec<_>> = samples
         .iter()
         .sorted_by(|a, b| a.ordinal.cmp(&b.ordinal))
@@ -161,7 +168,7 @@ pub fn run(opts: Opts) -> Result<()> {
         )?)));
     }
 
-    info!("Creating reader threads");
+    info!("Creating reader threads ({} threads per reader)", opts.decompression_threads_per_reader);
     let mut readers = input_fastq_groups
         .iter()
         .map(|g| {
@@ -185,7 +192,7 @@ pub fn run(opts: Opts) -> Result<()> {
         None
     };
 
-    info!("Processing data");
+    info!("Processing data ({} demuxing threads)", opts.demux_threads);
     let demuxer: Box<dyn Demultiplex> = if samples[0].barcode.len() <= 12
         || opts.override_matcher.map_or(false, |m| m == MatcherKind::PreCompute)
     {

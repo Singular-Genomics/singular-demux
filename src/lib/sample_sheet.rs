@@ -1,5 +1,6 @@
 use crate::opts::Opts;
 use crate::opts::TOOL_NAME;
+use crate::sample_metadata::coelesce_samples;
 use crate::sample_metadata::{validate_samples, SampleMetadata};
 use clap::Parser;
 use csv::{ReaderBuilder, StringRecord, Trim};
@@ -225,6 +226,7 @@ impl SampleSheet {
             samples.push(record);
         }
 
+        let samples = coelesce_samples(samples, &opts.lane);
         let samples = validate_samples(
             samples,
             Some(opts.allowed_mismatches),
@@ -407,6 +409,7 @@ impl SampleSheet {
         };
 
         let samples = SampleSheet::slurp_samples(&records[start..=end], start)?;
+        let samples = coelesce_samples(samples, &opts.lane);
 
         // Validate the samples
         let samples = validate_samples(

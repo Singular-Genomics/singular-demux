@@ -451,11 +451,11 @@ where
 
             if !self.skip_read_name_check {
                 let first_head = zipped_reads[0].head();
-                let end_index = zipped_reads[0].head().find_byte(b' ').unwrap_or(first_head.len());
+                let end_index = zipped_reads[0].head().find_byte(b':').unwrap_or(first_head.len());
                 for read in zipped_reads.iter().dropping(1) {
                     let cur_head = read.head();
                     let ok = cur_head.len() == end_index
-                        || (cur_head.len() > end_index && cur_head[end_index] == b' ');
+                        || (cur_head.len() > end_index && cur_head[end_index] == b':');
                     let ok = ok && first_head[0..end_index] == cur_head[0..end_index];
                     ensure!(
                         ok,
