@@ -68,11 +68,13 @@ pub fn run(opts: Opts) -> Result<()> {
         &opts.output_dir.to_string_lossy()
     );
     ensure!(!opts.read_structures.is_empty(), "At least one read structure must be specified");
-    ensure!(
-        opts.sample_barcode_in_fastq_header
-            || opts.read_structures.iter().any(|s| s.sample_barcodes().count() > 0),
-        "No sample barcodes found in read structures"
-    );
+    if !is_no_demux {
+        ensure!(
+            opts.sample_barcode_in_fastq_header
+                || opts.read_structures.iter().any(|s| s.sample_barcodes().count() > 0),
+            "No sample barcodes found in read structures"
+        );
+    }
     ensure!(
         opts.read_structures.iter().any(|s| s.templates().count() > 0),
         "No templates found in read structures"
