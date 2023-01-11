@@ -124,7 +124,7 @@ pub fn run(opts: Opts) -> Result<()> {
     }
 
     info!(
-        "Creating writer threads (threads for writing/compressing: {}/{}",
+        "Creating writer threads (threads for writing/compressing: {}/{})",
         opts.writer_threads, opts.compressor_threads
     );
     let writers: Result<Vec<_>> = samples
