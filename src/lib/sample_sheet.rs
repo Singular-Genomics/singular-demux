@@ -1,5 +1,6 @@
 use crate::opts::Opts;
 use crate::opts::TOOL_NAME;
+use crate::sample_metadata::coelesce_samples;
 use crate::sample_metadata::{validate_samples, SampleMetadata};
 use clap::Parser;
 use csv::{ReaderBuilder, StringRecord, Trim};
@@ -225,6 +226,7 @@ impl SampleSheet {
             samples.push(record);
         }
 
+        let samples = coelesce_samples(samples, &opts.lane);
         let samples = validate_samples(
             samples,
             Some(opts.allowed_mismatches),
@@ -342,7 +344,7 @@ impl SampleSheet {
         let header = &records[0];
 
         // parse the samples
-        let mut ordinal = 1;
+        let mut ordinal = 0;
         let mut samples: Vec<SampleMetadata> = vec![];
         for record in &records[1..] {
             // allow an empty line
@@ -407,6 +409,7 @@ impl SampleSheet {
         };
 
         let samples = SampleSheet::slurp_samples(&records[start..=end], start)?;
+        let samples = coelesce_samples(samples, &opts.lane);
 
         // Validate the samples
         let samples = validate_samples(
@@ -426,7 +429,7 @@ mod test {
     use crate::opts::Opts;
     use crate::sample_sheet::{SampleSheet, SampleSheetError};
     use bstr::BString;
-    use clap::error::ErrorKind::{MissingRequiredArgument, UnknownArgument};
+    use clap::error::ErrorKind::UnknownArgument;
     use csv::StringRecord;
     use itertools::Itertools;
     use matches::assert_matches;
@@ -595,11 +598,11 @@ mod test {
         assert_eq!(samples[0].sample_id, "S1");
         assert_eq!(samples[0].index1, Some(BString::from("AAAA")));
         assert_eq!(samples[0].index2, Some(BString::from("CCCC")));
-        assert_eq!(samples[0].ordinal, 1);
+        assert_eq!(samples[0].ordinal, 0);
         assert_eq!(samples[1].sample_id, "S2");
         assert_eq!(samples[1].index1, Some(BString::from("GGGG")));
         assert_eq!(samples[1].index2, Some(BString::from("TTTT")));
-        assert_eq!(samples[1].ordinal, 2);
+        assert_eq!(samples[1].ordinal, 1);
     }
 
     #[test]

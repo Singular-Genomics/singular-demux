@@ -243,6 +243,12 @@ pub struct Opts {
     /// Prepend this prefix to all output metric file names.
     #[clap(long, display_order = 31)]
     pub metric_prefix: Option<String>,
+
+    /// Select a subset of lanes to demultiplex.  Will cause only samples and input FASTQs with
+    /// the given `Lane`(s) to be demultiplexed.  Samples without a lane will be ignored, and
+    /// FASTQs without lane information will be ignored.
+    #[clap(long, short = 'l', required = false, multiple = true, display_order = 31)]
+    pub lane: Vec<usize>,
 }
 
 impl Opts {
@@ -261,10 +267,15 @@ impl Opts {
     ///
     /// If the input FASTQS are a mix of files and path prefixes, this function will return an
     /// error.
+    ///
+    /// If lanes is non-empty, then the input FASTQs must be path prefixes so that their lane can
+    /// be inferred from the FASTQ file name, and only those FASTQs from the given lane(s) will be
+    /// returned.
     pub fn from(
-        fastqs: Vec<PathBuf>,
-        read_structures: Vec<ReadStructure>,
+        fastqs: &[PathBuf],
+        read_structures: &[ReadStructure],
         sample_barcode_in_fastq_header: bool,
+        lanes: &[usize],
     ) -> Result<Vec<FastqsAndReadStructure>> {
         // must have FASTQs
         ensure!(!fastqs.is_empty(), "No FASTQs or path prefixes found with --fastq");
@@ -285,14 +296,16 @@ impl Opts {
                     "Read structures may not contain sample barcode segment(s) when extracting sample barcodes from the FASTQ header");
             }
 
-            FastqsAndReadStructure::zip(&fastqs, &read_structures)
+            ensure!(lanes.is_empty(), "Cannot specify lanes when explicit FASTQ paths are used");
+
+            FastqsAndReadStructure::zip(fastqs, read_structures)
         } else if fastqs.iter().all(|f| !f.is_file()) {
             ensure!(
                 read_structures.is_empty(),
                 "Read Structure must not be given when the input FASTQs are a path prefix."
             );
 
-            let input_fastq_group = FastqsAndReadStructure::from_prefixes(&fastqs);
+            let input_fastq_group = FastqsAndReadStructure::from_prefixes(fastqs, lanes);
 
             // Ensure that if the sample barcodes are to be extracted from the FASTQ header then
             // no index reads (sample barcode reads) should be found.
@@ -332,7 +345,8 @@ impl Opts {
         }
 
         // Ensure that all FASTQs have the same read name in the header.  This checks only the
-        // first read in each FASTQ
+        // first read in each FASTQ, and only up to the first colon in the read name.  The latter
+        // is required in case we have reads across lanes.
         let mut first_head: Vec<u8> = vec![];
         let mut end_index: usize = 0;
         let mut first_file: String = String::from("");
@@ -351,12 +365,12 @@ impl Opts {
                     Some(Ok(record)) => {
                         if first_head.is_empty() {
                             first_head = record.head().to_vec();
-                            end_index = first_head.find_byte(b' ').unwrap_or(first_head.len());
+                            end_index = first_head.find_byte(b':').unwrap_or(first_head.len());
                             first_file = file.to_string_lossy().to_string();
                         } else {
                             let head = record.head();
                             let ok = head.len() == end_index
-                                || (head.len() > end_index && head[end_index] == b' ');
+                                || (head.len() > end_index && head[end_index] == b':');
                             let ok = ok && first_head[0..end_index] == head[0..end_index];
                             ensure!(
                                 ok,
@@ -519,6 +533,7 @@ impl Default for Opts {
             skip_read_name_check: false,
             sample_barcode_in_fastq_header: false,
             metric_prefix: None,
+            lane: vec![],
         }
     }
 }
@@ -566,10 +581,15 @@ impl FastqsAndReadStructure {
     /// FASTQS with the same kind and kind number are read in serially, (2) the FASTQS are
     /// synchronized across groups (e.g. the same lane/prefix across kind/kind-number will be read
     /// at the same time), and (3) we emit the read pairs in the correct order (e.g. R1/R2).
-    pub fn from_prefixes(prefixes: &[PathBuf]) -> Vec<FastqsAndReadStructure> {
+    ///
+    ///  If lanes is non-empty, then only those FASTQs from the given lane(s) will be returned.
+    pub fn from_prefixes(prefixes: &[PathBuf], lanes: &[usize]) -> Vec<FastqsAndReadStructure> {
         // glob all the FASTQs
-        let input_fastqs: Vec<InputFastq> =
-            prefixes.iter().flat_map(|prefix| InputFastq::glob(&prefix).unwrap()).collect();
+        let input_fastqs: Vec<InputFastq> = prefixes
+            .iter()
+            .flat_map(|prefix| InputFastq::glob(&prefix).unwrap())
+            .filter(|fq| lanes.is_empty() || lanes.contains(&fq.lane))
+            .collect();
 
         // Collect all FASTQs by kind and kind number
         let mut unsorted_groups: HashMap<(SegmentType, u32), Vec<InputFastq>> = HashMap::new();
@@ -821,7 +841,7 @@ mod test {
             ..Opts::default()
         };
 
-        let result = Opts::from(opts.fastqs, opts.read_structures, false);
+        let result = Opts::from(&opts.fastqs, &opts.read_structures, false, &vec![]);
         assert!(result.is_err());
         if let Err(error) = result {
             assert!(error.to_string().contains("must either all be files or all path prefixes"));
@@ -836,7 +856,7 @@ mod test {
             ..Opts::default()
         };
 
-        let result = Opts::from(opts.fastqs, opts.read_structures, false);
+        let result = Opts::from(&opts.fastqs, &opts.read_structures, false, &vec![]);
         assert!(result.is_err());
         if let Err(error) = result {
             assert!(error.to_string().contains("No FASTQs or path prefixes found"));
@@ -860,7 +880,7 @@ mod test {
             ..Opts::default()
         };
 
-        let result = Opts::from(opts.fastqs, opts.read_structures, false);
+        let result = Opts::from(&opts.fastqs, &opts.read_structures, false, &vec![]);
         assert!(result.is_err());
         if let Err(error) = result {
             assert!(error
@@ -879,7 +899,7 @@ mod test {
             ..Opts::default()
         };
 
-        let result = Opts::from(opts.fastqs, opts.read_structures, false);
+        let result = Opts::from(&opts.fastqs, &opts.read_structures, false, &vec![]);
         assert!(result.is_err());
         if let Err(error) = result {
             assert!(error.to_string().contains("Read Structure must not be given"));
@@ -892,7 +912,7 @@ mod test {
         let prefix = dir.path().join("prefix");
         let opts = Opts { read_structures: vec![], fastqs: vec![prefix], ..Opts::default() };
 
-        let result = Opts::from(opts.fastqs, opts.read_structures, false);
+        let result = Opts::from(&opts.fastqs, &opts.read_structures, false, &vec![]);
         assert!(result.is_err());
         if let Err(error) = result {
             assert!(error.to_string().contains("No FASTQS found for prefix"));
@@ -920,7 +940,7 @@ mod test {
         let opts =
             Opts { read_structures: vec![], fastqs: vec![prefix.clone()], ..Opts::default() };
 
-        let result = Opts::from(opts.fastqs, opts.read_structures, false);
+        let result = Opts::from(&opts.fastqs, &opts.read_structures, false, &vec![]);
         assert!(result.is_err());
         if let Err(error) = result {
             assert!(error.to_string().contains("Different # of FASTQs per group"));
@@ -966,7 +986,7 @@ mod test {
 
         let opts = Opts { read_structures: vec![], fastqs: prefixes, ..Opts::default() };
 
-        let results = Opts::from(opts.fastqs, opts.read_structures, false).unwrap();
+        let results = Opts::from(&opts.fastqs, &opts.read_structures, false, &vec![]).unwrap();
         assert_eq!(results.len(), 4);
 
         // I1
@@ -1026,7 +1046,7 @@ mod test {
             ..Opts::default()
         };
 
-        let result = Opts::from(opts.fastqs, opts.read_structures, false);
+        let result = Opts::from(&opts.fastqs, &opts.read_structures, false, &vec![]);
 
         assert_eq!(result.is_ok(), ok);
         if let Err(error) = result {
@@ -1047,25 +1067,25 @@ mod test {
         // FASTQ file
         // Read structure has a sample barcode, but extracting sample barcode from FASTQ header,
         // so should fail
-        let result = Opts::from(vec![fastq.clone()], vec![read_structure.clone()], true);
+        let result = Opts::from(&vec![fastq.clone()], &vec![read_structure.clone()], true, &vec![]);
         assert!(result.is_err());
 
         // FASTQ file
         // Read structure has a sample barcode and not extracting sample barcode from FASTQ header,
         // so should be ok
-        let result = Opts::from(vec![fastq], vec![read_structure], false);
+        let result = Opts::from(&vec![fastq], &vec![read_structure], false, &vec![]);
         assert!(result.is_ok());
 
         // Path prefix
         // Index FASTQ found, but extracting sample barcode from FASTQ header,
         // so should fail
-        let result = Opts::from(vec![prefix.clone()], vec![], true);
+        let result = Opts::from(&vec![prefix.clone()], &vec![], true, &vec![]);
         assert!(result.is_err());
 
         // Path prefix
         //Index FASTQ found and not extracting sample barcode from FASTQ header,
         // so should be ok
-        let result = Opts::from(vec![prefix], vec![], false);
+        let result = Opts::from(&vec![prefix], &vec![], false, &vec![]);
         assert!(result.is_ok());
     }
 }

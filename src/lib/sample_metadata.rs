@@ -1,7 +1,10 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::must_use_candidate)]
 
-use std::{collections::HashSet, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+};
 
 use bstr::{BStr, BString};
 use itertools::Itertools;
@@ -312,6 +315,45 @@ pub fn validate_samples(
     }
 
     Ok(samples)
+}
+
+/// Subset the samples to those with the specific set of lanes.  If no lanes are provided, all
+/// samples are considered.  Next, aggregate samples with the same Sample_ID and barcode
+/// combination.
+pub fn coelesce_samples(samples: Vec<SampleMetadata>, lanes: &[usize]) -> Vec<SampleMetadata> {
+    // subset to just the samples for the given lane
+    let samples = if lanes.is_empty() {
+        samples
+    } else {
+        // subset to just the samples for the given lane
+        samples
+            .iter()
+            .filter(|sample| sample.lane.filter(|lane| lanes.contains(lane)).is_some())
+            .cloned()
+            .collect()
+    };
+
+    // Aggregate samples with the same Sample_ID and barcode
+    let mut sample_groups: HashMap<(String, BString), Vec<SampleMetadata>> = HashMap::new();
+    for sample in &samples {
+        let key = (sample.sample_id.clone(), sample.barcode.clone());
+        sample_groups.entry(key).or_insert_with(|| Vec::with_capacity(1)).push(sample.clone());
+    }
+
+    // Create a new sample per group (per unique Sample_ID/barcode combination)
+    let mut samples: Vec<SampleMetadata> = sample_groups
+        .into_iter()
+        .map(|(_, group)| {
+            let sample = group[0].clone();
+            SampleMetadata { lane: None, ..sample }
+        })
+        .collect();
+
+    // Sort by line number to keep the order of samples in the outputs (e.g. metrics) the same
+    // as the order in the input (e.g. sample sheet).
+    samples.sort_by_key(|sample| sample.line_number);
+
+    samples
 }
 
 /// Serialize a collection of [`SampleMetadata`] into a file.
