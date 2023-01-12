@@ -429,7 +429,7 @@ mod test {
     use crate::opts::Opts;
     use crate::sample_sheet::{SampleSheet, SampleSheetError};
     use bstr::BString;
-    use clap::error::ErrorKind::{MissingRequiredArgument, UnknownArgument};
+    use clap::error::ErrorKind::UnknownArgument;
     use csv::StringRecord;
     use itertools::Itertools;
     use matches::assert_matches;
@@ -598,11 +598,11 @@ mod test {
         assert_eq!(samples[0].sample_id, "S1");
         assert_eq!(samples[0].index1, Some(BString::from("AAAA")));
         assert_eq!(samples[0].index2, Some(BString::from("CCCC")));
-        assert_eq!(samples[0].ordinal, 1);
+        assert_eq!(samples[0].ordinal, 0);
         assert_eq!(samples[1].sample_id, "S2");
         assert_eq!(samples[1].index1, Some(BString::from("GGGG")));
         assert_eq!(samples[1].index2, Some(BString::from("TTTT")));
-        assert_eq!(samples[1].ordinal, 2);
+        assert_eq!(samples[1].ordinal, 1);
     }
 
     #[test]
