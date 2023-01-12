@@ -344,7 +344,7 @@ impl SampleSheet {
         let header = &records[0];
 
         // parse the samples
-        let mut ordinal = 1;
+        let mut ordinal = 0;
         let mut samples: Vec<SampleMetadata> = vec![];
         for record in &records[1..] {
             // allow an empty line
