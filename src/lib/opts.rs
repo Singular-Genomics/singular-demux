@@ -114,16 +114,16 @@ pub struct Opts {
     pub output_dir: PathBuf,
 
     /// Number of allowed mismatches between the observed barcode and the expected barcode.
-    #[clap(long, short = 'm', default_value = "1", display_order = 11)]
+    #[clap(long, short = 'm', default_value = "1", display_order = 5)]
     pub allowed_mismatches: usize,
 
     /// The minimum allowed difference between an observed barcode and the second closest expected
     /// barcode.
-    #[clap(long, short = 'd', default_value = "2", display_order = 11)]
+    #[clap(long, short = 'd', default_value = "2", display_order = 6)]
     pub min_delta: usize,
 
     /// Number of N's to allow in a barcode without counting against the allowed_mismatches
-    #[clap(long, short = 'F', default_value = "1", display_order = 11)]
+    #[clap(long, short = 'F', default_value = "1", display_order = 7)]
     pub free_ns: usize,
 
     /// Max no-calls (N's) in a barcode before it is considered unmatchable.
@@ -131,18 +131,18 @@ pub struct Opts {
     /// A barcode with total N's greater than `max_no_call` will be considered unmatchable.
     ///
     /// [default: None]
-    #[clap(long, short = 'N', display_order = 11)]
+    #[clap(long, short = 'N', display_order = 8)]
     pub max_no_calls: Option<usize>,
 
     /// Mask template bases with quality scores less than specified value(s).
     ///
     /// Sample barcode/index and UMI bases are never masked. If provided either a single value,
     /// or one value per FASTQ must be provided.
-    #[clap(long, short = 'M', required = false, multiple = true, display_order = 11)]
+    #[clap(long, short = 'M', required = false, multiple = true, display_order = 9)]
     pub quality_mask_threshold: Vec<u8>,
 
     /// Filter out control reads.
-    #[clap(long, short = 'C', display_order = 11)]
+    #[clap(long, short = 'C', display_order = 10)]
     pub filter_control_reads: bool,
 
     /// Filter reads failing quality filter.
@@ -160,60 +160,60 @@ pub struct Opts {
     /// For each read structure, all segment types listed by `--output-types` will be output to a
     /// FASTQ file.
     // TODO: add FromStr implementation for SegmentType so this can be a Vec<SegmentType>.  See: https://github.com/fulcrumgenomics/read-structure/issues/3
-    #[clap(long, short = 'T', default_value = "T", verbatim_doc_comment, display_order = 21)]
+    #[clap(long, short = 'T', default_value = "T", verbatim_doc_comment, display_order = 12)]
     pub output_types: String,
 
     /// The sample name for undetermined reads (reads that do not match an expected barcode).
-    #[clap(long, short = 'u', default_value = UNDETERMINED_NAME, display_order = 21)]
+    #[clap(long, short = 'u', default_value = UNDETERMINED_NAME, display_order = 13)]
     pub undetermined_sample_name: String,
 
     /// Output the most frequent "unmatched" barcodes up to this number.
     ///
     /// If set to 0 unmatched barcodes will not be collected, improving overall performance.
-    #[clap(long, short = 'U', default_value = "1000", display_order = 31)]
+    #[clap(long, short = 'U', default_value = "1000", display_order = 14)]
     pub most_unmatched_to_output: usize,
 
     /// Size of the channel for the unmatched barcode counter.
     ///
     /// Each item in the channel is a `Vec` of the barcodes of the unmatched reads. If all reads were unmatched
     /// the max number of barcodes in the Vec would be equal to `chunksize`.
-    #[clap(long, default_value = "1000", display_order = 31, hide = true)]
+    #[clap(long, default_value = "1000", display_order = 15, hide = true)]
     pub most_unmatched_channel_size: usize,
 
     /// Max number of keys the most unmatched hash map is allowed to contain.
-    #[clap(long, default_value = "5000000", display_order = 31, hide = true)]
+    #[clap(long, default_value = "5000000", display_order = 16, hide = true)]
     pub most_unmatched_max_map_size: usize,
 
     /// Number of keys to shrink the most unmatched hash map down to when it hits the `most_unmatched_max_map_size`.
-    #[clap(long, default_value = "5000", display_order = 31, hide = true)]
+    #[clap(long, default_value = "5000", display_order = 17, hide = true)]
     pub most_unmatched_downsize_to: usize,
 
     /// The number of reads to extract from a FASTQ at one time.
     ///
     /// A "chunk" is the unit of parallelization for all of demultiplexing and defines how many reads are operated on at one time.
-    #[clap(long, short = 'c', default_value = "1000", display_order = 31, hide = true)]
+    #[clap(long, short = 'c', default_value = "1000", display_order = 18, hide = true)]
     pub chunksize: NonZeroUsize,
 
     /// Number of threads for demultiplexing.
     ///
     /// The number of threads to use for the process of determining which input reads should be assigned to which sample.
-    #[clap(long, short = 't', default_value = "4", display_order = 31)]
+    #[clap(long, short = 't', default_value = "4", display_order = 19)]
     pub demux_threads: usize,
 
     /// Number of threads for compression the output reads.
     ///
     /// The number of threads to use for compressing reads that are queued for writing.
-    #[clap(long, default_value = "12", display_order = 31)]
+    #[clap(long, default_value = "12", display_order = 20)]
     pub compressor_threads: usize,
 
     /// Number of threads for writing compressed reads to output.
     ///
     /// The number of threads to have writing reads to their individual output files.
-    #[clap(long, default_value = "5", display_order = 31)]
+    #[clap(long, default_value = "5", display_order = 21)]
     pub writer_threads: usize,
 
     /// The number of threads to use for decompression for each reader.
-    #[clap(long, default_value = "4", display_order = 31, hide = true)]
+    #[clap(long, default_value = "4", display_order = 22, hide = true)]
     pub decompression_threads_per_reader: usize,
 
     /// Override the matcher heuristic.
@@ -224,30 +224,30 @@ pub struct Opts {
     /// This option allows for overriding that heuristic.
     ///
     /// [default: None]
-    #[clap(long, possible_values=MatcherKind::possible_values(), display_order = 31)]
+    #[clap(long, possible_values=MatcherKind::possible_values(), display_order = 23)]
     pub override_matcher: Option<MatcherKind>,
 
     /// If this is true, then all the read names across FASTQs will not be enforced to be the same.
     /// This may be useful when the read names are known to be the same and performance matters.
     /// Regardless, the first read name in each FASTQ will always be checked.
-    #[clap(long, display_order = 31)]
+    #[clap(long, display_order = 24)]
     pub skip_read_name_check: bool,
 
     /// If this is true, then the sample barcode is expected to be in the FASTQ read header.  For
     /// dual indexed data, the barcodes must be `+` (plus) delimited.  Additionally, if true, then
     /// neither index FASTQ files nor sample barcode segments in the read structure may be
     /// specified.
-    #[clap(long, display_order = 32)]
+    #[clap(long, display_order = 25)]
     pub sample_barcode_in_fastq_header: bool,
 
     /// Prepend this prefix to all output metric file names.
-    #[clap(long, display_order = 31)]
+    #[clap(long, display_order = 26)]
     pub metric_prefix: Option<String>,
 
     /// Select a subset of lanes to demultiplex.  Will cause only samples and input FASTQs with
     /// the given `Lane`(s) to be demultiplexed.  Samples without a lane will be ignored, and
     /// FASTQs without lane information will be ignored.
-    #[clap(long, short = 'l', required = false, multiple = true, display_order = 31)]
+    #[clap(long, short = 'l', required = false, multiple = true, display_order = 27)]
     pub lane: Vec<usize>,
 }
 
