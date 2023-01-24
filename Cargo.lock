@@ -1231,7 +1231,7 @@ dependencies = [
 
 [[package]]
 name = "sgdemux"
-version = "1.1.1-rc.1"
+version = "1.1.1"
 dependencies = [
  "ahash",
  "anyhow",
