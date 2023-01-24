@@ -26,7 +26,7 @@ This repository is home to the `sgdemux` tool for demultiplexing sequencing data
       * [Metrics](#metrics)
         * [per_sample_metrics.tsv](#per_sample_metricstsv)
         * [per_project_metrics.tsv](#per_project_metricstsv)
-        * [run_metrics.tsv](#run_metricstsv)
+        * [metrics.tsv](#metricstsv)
         * [most_frequent_unmatched.tsv](#most_frequent_unmatchedtsv)
         * [sample_barcode_hop_metrics.tsv](#sample_barcode_hop_metricstsv)
 * [Advance Usage](#advance-usage)
@@ -346,7 +346,7 @@ project is given).
 THe `barcode` will contain all `N`s. 
 The undetermined sample will not be aggregated with any other sample.
 
-##### `run_metrics.tsv`
+##### `metrics.tsv`
 
 This file is always produced and contains a small number of summary statistics across the demultiplexing run:
 
