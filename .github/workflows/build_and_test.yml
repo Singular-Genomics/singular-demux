@@ -15,10 +15,6 @@ jobs:
 
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: 1.57.0
-          override: true
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v1
@@ -37,11 +33,6 @@ jobs:
 
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: 1.57.0
-          override: true
-          components: rustfmt, clippy
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v1
@@ -70,10 +61,6 @@ jobs:
 
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: 1.57.0
-          override: true
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v1
