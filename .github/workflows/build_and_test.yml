@@ -14,7 +14,10 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Install stable toolchain
-        uses: actions-rs/toolchain@v1
+        uses: codota/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v1
@@ -32,7 +35,10 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Install stable toolchain
-        uses: actions-rs/toolchain@v1
+        uses: codota/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v1
