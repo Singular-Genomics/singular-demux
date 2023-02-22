@@ -72,7 +72,7 @@ pub fn filename(sample: &SampleMetadata, kind: &SegmentType, type_number: u32) -
         "{}_S{}_L00{}_{}{}_001.fastq.gz",
         sample.sample_id,
         sample.ordinal + 1,
-        1,
+        sample.lane.unwrap_or(1),
         segment_kind_to_fastq_id(kind),
         type_number
     )
