@@ -64,7 +64,7 @@ Note: cmake for older OS version such as Ubuntu 18.04 is not incompatible.
 ```console
 git clone https://github.com/Singular-Genomics/singular-demux.git
 cd singular-demux 
-cargo install --path ../singular-demux
+cargo install --path ../singular-demux --locked
 ```
 
 ## Contributing
