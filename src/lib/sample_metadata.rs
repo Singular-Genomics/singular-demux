@@ -345,7 +345,12 @@ pub fn coelesce_samples(samples: Vec<SampleMetadata>, lanes: &[usize]) -> Vec<Sa
         .into_iter()
         .map(|(_, group)| {
             let sample = group[0].clone();
-            SampleMetadata { lane: None, ..sample }
+            if group.len() > 1 {
+                // only remove lane information if there was > 1 sample found
+                SampleMetadata { lane: None, ..sample }
+            } else {
+                sample
+            }
         })
         .collect();
 
