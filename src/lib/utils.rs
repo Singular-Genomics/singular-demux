@@ -89,7 +89,7 @@ pub fn filenames<P: AsRef<Path>>(
     let mut output_paths = vec![];
     let mut counter = AHashMap::new();
     let output_dir = match &sample.project {
-        Some(project) => output_dir.as_ref().join(project.to_string()),
+        Some(project) => output_dir.as_ref().join(project),
         None => output_dir.as_ref().to_path_buf(),
     };
 
