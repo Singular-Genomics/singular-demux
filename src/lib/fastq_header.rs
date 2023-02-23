@@ -151,7 +151,7 @@ impl<'a> FastqHeader<'a> {
     /// If the optional [`Comment`] field is missing, `None` is returned.
     pub fn read_number(&self) -> Option<u8> {
         if let Some(comment) = self.comment.as_ref() {
-            return comment.info.read_number.get(0).copied();
+            return comment.info.read_number.first().copied();
         }
         None
     }

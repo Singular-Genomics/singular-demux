@@ -38,7 +38,7 @@ impl MatchResult {
     }
 }
 
-#[derive(ArgEnum, Debug, Clone, Copy, PartialEq)]
+#[derive(ArgEnum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MatcherKind {
     CachedHammingDistance,
     PreCompute,
@@ -284,13 +284,15 @@ fn find_independently(
     }
 }
 
+type DistanceFunction = dyn Fn(&[u8], &[u8], usize) -> usize;
+
 fn find_independently_cached(
     barcode: Vec<u8>,
     samples: &[SampleMetadata],
     max_mismatches: usize,
     min_delta: usize,
     free_ns: usize,
-    distance: &dyn Fn(&[u8], &[u8], usize) -> usize,
+    distance: &DistanceFunction,
 ) -> MatchResult {
     CACHE.with(|cache| {
         // check the cache
