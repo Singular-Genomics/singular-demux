@@ -81,9 +81,11 @@ jobs:
           cargo install cross
           echo "CARGO=cross" >> $GITHUB_ENV
       
-      - name: Set target environment variables
+			- name: Set target environment variables
         shell: bash
-        run: echo "TARGET_DIR=./target/${{ matrix.target }}" >> $GITHUB_ENV
+        run: |
+          echo "TARGET_FLAGS=--target ${{ matrix.target }}" >> $GITHUB_ENV
+          echo "TARGET_DIR=./target/${{ matrix.target }}" >> $GITHUB_ENV
 
       - name: Add missing target
         run: rustup target add ${{ matrix.target }}
