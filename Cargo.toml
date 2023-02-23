@@ -1,6 +1,6 @@
 [package]
 name = "sgdemux"
-version = "1.1.2"
+version = "1.1.3-rc.1"
 edition = "2021"
 authors = ["Nils Homer <nils@fulcrumgenomics.com>", "Seth Stadick <seth@fulcrumgenomics.com>"]
 license-file = "License"
