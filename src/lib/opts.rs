@@ -11,6 +11,7 @@ use clap::Parser;
 use env_logger::Env;
 use gzp::{BgzfSyncReader, BUFSIZE};
 use itertools::Itertools;
+use log::info;
 use read_structure::{ReadSegment, ReadStructure, SegmentType, ANY_LENGTH_STR};
 use seq_io::{fastq, BaseRecord};
 
@@ -300,11 +301,6 @@ impl Opts {
 
             FastqsAndReadStructure::zip(fastqs, read_structures)
         } else if fastqs.iter().all(|f| !f.is_file()) {
-            ensure!(
-                read_structures.is_empty(),
-                "Read Structure must not be given when the input FASTQs are a path prefix."
-            );
-
             let input_fastq_group = FastqsAndReadStructure::from_prefixes(fastqs, lanes);
 
             // Ensure that if the sample barcodes are to be extracted from the FASTQ header then
@@ -321,6 +317,37 @@ impl Opts {
                     }
                 }
             }
+
+            // If read structures are given on the command line or in the sample sheet, then
+            // replaces the existing read structures.  The number of FASTQ groups must match the
+            // number of provided read structures; order matters in the replacement.
+            let input_fastq_group = if read_structures.is_empty() {
+                input_fastq_group
+            } else {
+                ensure!(
+                    read_structures.len() == input_fastq_group.len(),
+                    "Provided # of read structures ({}) must match the number of auto-detected read structures ({})",
+                    read_structures.len(), input_fastq_group.len()
+                );
+
+                input_fastq_group
+                    .iter()
+                    .zip(read_structures.iter())
+                    .enumerate()
+                    .map(|(index, (group, read_structure))| {
+                        info!(
+                            "Replacing auto-detected read structure #{} ({}) with user-provided read structure ({})",
+                            index + 1,
+                            group.read_structure,
+                            read_structure
+                        );
+                        FastqsAndReadStructure {
+                            fastqs: group.fastqs.clone(),
+                            read_structure: read_structure.clone(),
+                        }
+                    })
+                    .collect()
+            };
 
             // must find some FASTQs since we ensured it above
             ensure!(
