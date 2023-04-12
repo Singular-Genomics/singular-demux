@@ -134,8 +134,7 @@ Alternatively, the FASTQS can be auto-detected when a path prefix is given to `-
 The FASTQs must be named `<dir>/<prefix>_L00<lane>_<kind><kind-number>_001.fastq.gz`, where `kind` is
 one of R (read/template), I (index/sample barcode), or U (umi/molecular barcode). 
 
-The Read Structure must not be given on the the command line or Sample Sheet.  Instead, the Read 
-Structure will be derived from file names (kind and kind number), with the full read length used for the given kind.
+The Read Structure will be derived from file names (kind and kind number), with the full read length used for the given kind.
 The derived Read Structure and FASTQs will be ordered first by `kind` (I then R then U), second by
 read number (e.g. R1 before R2).  This is important for command line options that can be specified once per read kind and number.
  E.g. if the following FASTQs are present with path prefix `/path/to/prefix`:
@@ -165,6 +164,10 @@ Furthermore, multiple lanes may be given and will be used for demultiplexing:
 ```
 
 When data for multiple lanes is provided, each lane must have the same number and types of input fastqs.
+
+The auto-detected/derived Read Structure may be override on the command line or in the sample sheet
+by providing the `--read-structures` argument.  In this case, the new read structure must be given
+and will be applied in the same order as described above (e.g. I1, I2, R1, R2 for a dual index paired end run).
 
 #### Read Structures
 
