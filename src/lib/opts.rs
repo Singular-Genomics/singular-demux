@@ -319,7 +319,7 @@ impl Opts {
             }
 
             // If read structures are given on the command line or in the sample sheet, then
-            // replaces the existing read structures.  The number of FASTQ groups must match the
+            // replace the existing read structures.  The number of FASTQ groups must match the
             // number of provided read structures; order matters in the replacement.
             let input_fastq_group = if read_structures.is_empty() {
                 input_fastq_group

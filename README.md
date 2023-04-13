@@ -165,7 +165,7 @@ Furthermore, multiple lanes may be given and will be used for demultiplexing:
 
 When data for multiple lanes is provided, each lane must have the same number and types of input fastqs.
 
-The auto-detected/derived Read Structure may be override on the command line or in the sample sheet
+The auto-detected/derived Read Structure may be overriden on the command line or in the sample sheet
 by providing the `--read-structures` argument.  In this case, the new read structure must be given
 and will be applied in the same order as described above (e.g. I1, I2, R1, R2 for a dual index paired end run).
 
