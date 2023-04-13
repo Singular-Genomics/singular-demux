@@ -94,6 +94,9 @@ pub enum SampleSheetError {
     #[error("Invalid barcode sequence for {id} `{barcode}` - {reason}. {line}")]
     InvalidBarcode { barcode: String, id: String, reason: ReasonBarcodeInvalid, line: ErrorLine },
 
+    #[error("Sample ordinals out of order")]
+    SampleOrdinalsOutOfOrder,
+
     // #[error("Io error occurred")]
     // Io(#[from] std::io::Error),
     #[error(transparent)]
@@ -226,7 +229,11 @@ impl SampleSheet {
             samples.push(record);
         }
 
-        let samples = coelesce_samples(samples, &opts.lane);
+        let samples = coelesce_samples(samples, &opts.lane)
+            .iter()
+            .sorted_by(|a, b| a.ordinal.cmp(&b.ordinal))
+            .cloned()
+            .collect();
         let samples = validate_samples(
             samples,
             Some(opts.allowed_mismatches),
@@ -409,7 +416,11 @@ impl SampleSheet {
         };
 
         let samples = SampleSheet::slurp_samples(&records[start..=end], start)?;
-        let samples = coelesce_samples(samples, &opts.lane);
+        let samples = coelesce_samples(samples, &opts.lane)
+            .iter()
+            .sorted_by(|a, b| a.ordinal.cmp(&b.ordinal))
+            .cloned()
+            .collect();
 
         // Validate the samples
         let samples = validate_samples(
