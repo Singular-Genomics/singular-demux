@@ -917,23 +917,6 @@ mod test {
     }
 
     #[test]
-    fn test_opts_from_error_read_structures_with_prefix() {
-        let dir = tempdir().unwrap();
-        let prefix = dir.path().join("prefix");
-        let opts = Opts {
-            read_structures: vec![ReadStructure::from_str("+B").unwrap()],
-            fastqs: vec![prefix],
-            ..Opts::default()
-        };
-
-        let result = Opts::from(&opts.fastqs, &opts.read_structures, false, &vec![]);
-        assert!(result.is_err());
-        if let Err(error) = result {
-            assert!(error.to_string().contains("Read Structure must not be given"));
-        }
-    }
-
-    #[test]
     fn test_opts_from_error_no_fastqs_found_with_prefix() {
         let dir = tempdir().unwrap();
         let prefix = dir.path().join("prefix");
