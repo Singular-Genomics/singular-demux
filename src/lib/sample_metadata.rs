@@ -268,6 +268,8 @@ impl AsRef<SampleMetadata> for SampleMetadata {
 ///
 /// # Errors
 ///
+/// - [`SampleSheetError::ZeroSamples`]
+/// - [`SampleSheetError::ZeroSamplesForLane`]
 /// - [`SampleSheetError::DuplicateSampleId`]
 /// - [`SampleSheetError::InvalidBarcode`]
 /// - [`SampleSheetError::BarcodeCollision`]
@@ -276,9 +278,14 @@ pub fn validate_samples(
     mut samples: Vec<SampleMetadata>,
     min_mismatch: Option<usize>,
     undetermined_name: &str,
+    lanes: &[usize],
 ) -> Result<Vec<SampleMetadata>, SampleSheetError> {
     if samples.is_empty() {
-        return Err(SampleSheetError::ZeroSamples);
+        if lanes.is_empty() {
+            return Err(SampleSheetError::ZeroSamples);
+        }
+        let lanes_str = lanes.iter().map(|lane| format!("{}", lane)).join(",");
+        return Err(SampleSheetError::ZeroSamplesForLane { lanes: lanes_str });
     }
 
     // Check for duplicate sample identifiers

@@ -120,6 +120,9 @@ pub enum SampleSheetError {
 
     #[error("Sample metadata must include at least one sample")]
     ZeroSamples,
+
+    #[error("Sample metadata must include at least one sample for lane(s): {lanes}")]
+    ZeroSamplesForLane { lanes: String },
 }
 
 #[derive(Debug, Clone)]
@@ -238,6 +241,7 @@ impl SampleSheet {
             samples,
             Some(opts.allowed_mismatches),
             &opts.undetermined_sample_name,
+            &opts.lane,
         )?;
 
         Ok(SampleSheet { samples, opts })
@@ -427,6 +431,7 @@ impl SampleSheet {
             samples,
             Some(opts.allowed_mismatches),
             &opts.undetermined_sample_name,
+            &opts.lane,
         )?;
 
         Ok(SampleSheet { samples, opts })
