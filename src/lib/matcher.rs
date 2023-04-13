@@ -331,8 +331,6 @@ fn hamming_distance(alpha: &[u8], beta: &[u8], free_ns: usize) -> usize {
 
 #[cfg(test)]
 mod test {
-    use std::array::IntoIter;
-
     use ahash::AHashMap;
     use bstr::{BString, B};
 
@@ -405,7 +403,7 @@ mod test {
         let max_mismatches = 1;
         let min_delta = 2;
 
-        let expected = AHashMap::from_iter(IntoIter::new([
+        let expected = AHashMap::from_iter(IntoIterator::into_iter([
             (B("AAG").to_vec(), PrecomputedMatch { sample: 0, hamming_dist: 1 }),
             (B("AGA").to_vec(), PrecomputedMatch { sample: 0, hamming_dist: 1 }),
             (B("GAA").to_vec(), PrecomputedMatch { sample: 0, hamming_dist: 1 }),
