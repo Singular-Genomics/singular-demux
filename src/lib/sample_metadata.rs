@@ -336,7 +336,7 @@ pub fn validate_samples(
 }
 
 /// Subset the samples to those with the specific set of lanes.  If no lanes are provided, all
-/// samples are considered.  Next, aggregate samples with the same Sample_ID and barcode
+/// samples are considered.  Next, aggregate samples with the same `Sample_ID` and barcode
 /// combination.
 pub fn coelesce_samples(samples: Vec<SampleMetadata>, lanes: &[usize]) -> Vec<SampleMetadata> {
     // subset to just the samples for the given lane
@@ -362,12 +362,13 @@ pub fn coelesce_samples(samples: Vec<SampleMetadata>, lanes: &[usize]) -> Vec<Sa
     let mut samples: Vec<SampleMetadata> = sample_groups
         .into_iter()
         .map(|(_, group)| {
-            let sample = group[0].clone();
             if group.len() > 1 {
+                // Pick the sample with the lowest line number to preserve ordering from the input file
+                let sample = group.iter().min_by_key(|s| s.line_number).unwrap().clone();
                 // only remove lane information if there was > 1 sample found
                 SampleMetadata { lane: None, ..sample }
             } else {
-                sample
+                group[0].clone()
             }
         })
         .collect();
@@ -375,6 +376,13 @@ pub fn coelesce_samples(samples: Vec<SampleMetadata>, lanes: &[usize]) -> Vec<Sa
     // Sort by line number to keep the order of samples in the outputs (e.g. metrics) the same
     // as the order in the input (e.g. sample sheet).
     samples.sort_by_key(|sample| sample.line_number);
+
+    // Update the ordinals
+    samples = samples
+        .iter()
+        .enumerate()
+        .map(|(index, sample)| SampleMetadata { ordinal: index, ..sample.clone() })
+        .collect();
 
     samples
 }
@@ -594,5 +602,119 @@ Sample2,GGGG
         } else {
             panic!("Wrong error returned");
         }
+    }
+
+    /// Create a new [`SampleMetadata`] object.
+    ///
+    /// # Errors
+    ///
+    /// - [`SampleSheetError::InvalidBarcode`] if the barcode is invalid
+    pub fn new_sample_meta(
+        sample_id: String,
+        barcode: BString,
+        number: usize,
+        line_number: usize,
+        lane: usize,
+    ) -> Result<SampleMetadata, SampleSheetError> {
+        SampleMetadata::new(sample_id, barcode, number, line_number)
+            .map(|sample| SampleMetadata { lane: Some(lane), ..sample })
+    }
+
+    #[test]
+    fn test_coalesce_no_lanes() {
+        let samples = vec![
+            SampleMetadata::new(String::from("Sample1"), BString::from("ACTG"), 0, 2).unwrap(),
+            SampleMetadata::new(String::from("Sample2"), BString::from("GGGG"), 1, 3).unwrap(),
+        ];
+        let actual = coelesce_samples(samples.clone(), &[]);
+        assert_eq!(actual, samples);
+    }
+
+    #[test]
+    fn test_coalesce_lanes_on_sample_but_no_lanes_given() {
+        let samples = vec![
+            new_sample_meta(String::from("Sample1"), BString::from("ACTG"), 0, 2, 1).unwrap(),
+            new_sample_meta(String::from("Sample2"), BString::from("GGGG"), 1, 3, 2).unwrap(),
+        ];
+        let actual = coelesce_samples(samples.clone(), &[]);
+        assert_eq!(actual, samples);
+    }
+
+    #[test]
+    fn test_coalesce_different_lanes_on_sample_but_no_lanes_given() {
+        let samples = vec![
+            new_sample_meta(String::from("Sample1"), BString::from("ACTG"), 0, 2, 1).unwrap(),
+            new_sample_meta(String::from("Sample1"), BString::from("ACTG"), 0, 2, 2).unwrap(),
+            new_sample_meta(String::from("Sample2"), BString::from("GGGG"), 1, 3, 2).unwrap(),
+        ];
+        let expected = vec![
+            SampleMetadata::new(String::from("Sample1"), BString::from("ACTG"), 0, 2).unwrap(),
+            new_sample_meta(String::from("Sample2"), BString::from("GGGG"), 1, 3, 2).unwrap(),
+        ];
+        let actual = coelesce_samples(samples, &[]);
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_coalesce_different_lanes_on_sample_and_subset_given_lane() {
+        let samples = vec![
+            new_sample_meta(String::from("Sample1"), BString::from("ACTG"), 0, 2, 1).unwrap(),
+            new_sample_meta(String::from("Sample1"), BString::from("ACTG"), 0, 2, 2).unwrap(),
+            new_sample_meta(String::from("Sample2"), BString::from("GGGG"), 1, 3, 2).unwrap(),
+        ];
+        // the lane value is kept on both samples
+        let expected = vec![
+            new_sample_meta(String::from("Sample1"), BString::from("ACTG"), 0, 2, 2).unwrap(),
+            new_sample_meta(String::from("Sample2"), BString::from("GGGG"), 1, 3, 2).unwrap(),
+        ];
+        let actual = coelesce_samples(samples, &[2]);
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_coalesce_different_lanes_on_sample_and_subset_given_lane_and_no_samples_remain() {
+        let samples = vec![
+            new_sample_meta(String::from("Sample1"), BString::from("ACTG"), 0, 2, 1).unwrap(),
+            new_sample_meta(String::from("Sample1"), BString::from("ACTG"), 0, 2, 2).unwrap(),
+            new_sample_meta(String::from("Sample2"), BString::from("GGGG"), 1, 3, 2).unwrap(),
+        ];
+        let actual = coelesce_samples(samples, &[3]);
+        assert_eq!(actual, []);
+    }
+
+    #[test]
+    fn test_coalesce_pick_lowest_ordinal() {
+        let samples = vec![
+            new_sample_meta(String::from("Sample1"), BString::from("ACTG"), 2, 2, 1).unwrap(),
+            new_sample_meta(String::from("Sample1"), BString::from("ACTG"), 1, 1, 1).unwrap(),
+            new_sample_meta(String::from("Sample1"), BString::from("ACTG"), 3, 3, 1).unwrap(),
+        ];
+        let actual = coelesce_samples(samples, &[]);
+        let expected = vec![SampleMetadata::new(
+            String::from("Sample1"),
+            BString::from("ACTG"),
+            0,
+            1,
+        )
+        .unwrap()];
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_coalesce_sort_by_ordinal_after_filtering() {
+        let samples = vec![
+            new_sample_meta(String::from("Sample1"), BString::from("ACTG"), 1, 1, 3).unwrap(),
+            new_sample_meta(String::from("Sample2"), BString::from("GGGG"), 4, 4, 2).unwrap(),
+            new_sample_meta(String::from("Sample3"), BString::from("TTTT"), 3, 3, 2).unwrap(),
+            new_sample_meta(String::from("Sample4"), BString::from("CCCC"), 2, 2, 2).unwrap(),
+            new_sample_meta(String::from("Sample5"), BString::from("AAAA"), 5, 5, 1).unwrap(),
+        ];
+        let actual = coelesce_samples(samples, &[2]);
+        let expected = vec![
+            new_sample_meta(String::from("Sample4"), BString::from("CCCC"), 0, 2, 2).unwrap(),
+            new_sample_meta(String::from("Sample3"), BString::from("TTTT"), 1, 3, 2).unwrap(),
+            new_sample_meta(String::from("Sample2"), BString::from("GGGG"), 2, 4, 2).unwrap(),
+        ];
+        assert_eq!(actual, expected);
     }
 }
