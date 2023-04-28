@@ -326,7 +326,15 @@ pub fn validate_samples(
         // then add in the undetermined sample.  The ordinal must be larger than the maximum
         // ordinal of an existing sample.
         let undetermined_ordinal = prev_ordinal + 1;
-        let lane: Option<usize> = if lanes.len() == 1 { Some(lanes[0]) } else { None };
+        let lane: Option<usize> = {
+            let sample_lanes: Vec<Option<usize>> =
+                samples.iter().map(|s| s.lane).unique().collect();
+            if sample_lanes.len() == 1 {
+                sample_lanes[0]
+            } else {
+                None
+            }
+        };
         samples.push(SampleMetadata::new_allow_invalid_bases(
             String::from(undetermined_name),
             BString::from(vec![b'N'; samples[0].barcode.len()]),
