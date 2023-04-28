@@ -47,8 +47,8 @@ pub fn run(opts: Opts) -> Result<()> {
 
     // Print some information about the read structures and associated FASTQs
     let read_structure_str: String =
-        input_fastq_groups.iter().map(|g| format!(" {}", g.read_structure)).into_iter().collect();
-    info!("Using read structures:{}", read_structure_str);
+        input_fastq_groups.iter().map(|g| format!("{}", g.read_structure)).join(" ");
+    info!("Using read structures: {}", read_structure_str);
     for input_fastq_group in &input_fastq_groups {
         info!("  Read structure: {}", input_fastq_group.read_structure);
         info!("  FASTQs:");

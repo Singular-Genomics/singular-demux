@@ -264,24 +264,40 @@ impl AsRef<SampleMetadata> for SampleMetadata {
 /// If there is more than one sample, or we have one sample with an actual barcode then add in
 /// an undetermined sample.
 ///
+/// Also validates that the sample ordinals are in strictly ascending order.
+///
 /// # Errors
 ///
+/// - [`SampleSheetError::ZeroSamples`]
+/// - [`SampleSheetError::ZeroSamplesForLane`]
 /// - [`SampleSheetError::DuplicateSampleId`]
 /// - [`SampleSheetError::InvalidBarcode`]
 /// - [`SampleSheetError::BarcodeCollision`]
+/// - [`SampleSheetError::SampleOrdinalsOutOfOrder`]
 pub fn validate_samples(
     mut samples: Vec<SampleMetadata>,
     min_mismatch: Option<usize>,
     undetermined_name: &str,
+    lanes: &[usize],
 ) -> Result<Vec<SampleMetadata>, SampleSheetError> {
     if samples.is_empty() {
-        return Err(SampleSheetError::ZeroSamples);
+        if lanes.is_empty() {
+            return Err(SampleSheetError::ZeroSamples);
+        }
+        let lanes_str = lanes.iter().map(|lane| format!("{}", lane)).join(",");
+        return Err(SampleSheetError::ZeroSamplesForLane { lanes: lanes_str });
     }
 
     // Check for duplicate sample identifiers
     // TODO: same sample id, but across lanes
     let mut ids = HashSet::new();
+    let mut prev_ordinal = 0;
     for record in &samples {
+        // Developer note: leverages `ids` to determine if we are on the first sample (ids is empty)
+        if !ids.is_empty() && prev_ordinal >= record.ordinal {
+            return Err(SampleSheetError::SampleOrdinalsOutOfOrder);
+        }
+        prev_ordinal = record.ordinal;
         if !ids.insert(record.sample_id.clone()) {
             return Err(SampleSheetError::DuplicateSampleId { id: record.sample_id.clone() });
         }
@@ -306,11 +322,13 @@ pub fn validate_samples(
         }
 
         // If we have more than one sample, or we have one sample with an actual barcode
-        // then add in the undetermined sample.
+        // then add in the undetermined sample.  The ordinal must be larger than the maximum
+        // ordinal of an existing sample.
+        let undetermined_ordinal = prev_ordinal + 1;
         samples.push(SampleMetadata::new_allow_invalid_bases(
             String::from(undetermined_name),
             BString::from(vec![b'N'; samples[0].barcode.len()]),
-            samples.len(),
+            undetermined_ordinal,
         )?);
     }
 
