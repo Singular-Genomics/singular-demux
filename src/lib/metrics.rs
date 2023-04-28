@@ -261,6 +261,7 @@ fn build_per_project_metrics(
                     project,
                     BString::from(vec![b'N'; samples[0].barcode.len()]),
                     project_to_metric.len(),
+                    None,
                 )?;
                 // Add the sample and current metric to the maps
                 project_to_sample.insert(key, sample);

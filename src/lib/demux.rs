@@ -1667,6 +1667,7 @@ mod test {
                 String::from(UNDETERMINED_NAME),
                 BString::from(vec![b'N'; metadata[0].barcode.len()]),
                 metadata.len(),
+                None,
             )
             .unwrap(),
         );
