@@ -324,7 +324,7 @@ pub fn validate_samples(
         // If we have more than one sample, or we have one sample with an actual barcode
         // then add in the undetermined sample.  The ordinal must be larger than the maximum
         // ordinal of an existing sample.
-        let undetermined_ordinal = samples.iter().map(|s| s.ordinal).max().unwrap() + 1;
+        let undetermined_ordinal = prev_ordinal + 1;
         samples.push(SampleMetadata::new_allow_invalid_bases(
             String::from(undetermined_name),
             BString::from(vec![b'N'; samples[0].barcode.len()]),

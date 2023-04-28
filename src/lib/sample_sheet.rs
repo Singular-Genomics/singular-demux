@@ -234,7 +234,7 @@ impl SampleSheet {
 
         let samples = coelesce_samples(samples, &opts.lane)
             .iter()
-            .sorted_by(|a, b| a.ordinal.cmp(&b.ordinal))
+            .sorted_by_key(|a| a.ordinal)
             .cloned()
             .collect();
         let samples = validate_samples(
