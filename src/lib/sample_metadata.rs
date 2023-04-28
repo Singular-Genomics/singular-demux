@@ -99,13 +99,14 @@ impl SampleMetadata {
         sample_id: String,
         barcode: BString,
         number: usize,
+        lane: Option<usize>,
     ) -> Result<Self, SampleSheetError> {
         Ok(Self {
             sample_id,
             raw_barcode: Some(barcode.clone()),
             index1: None,
             index2: None,
-            lane: None,
+            lane,
             project: None,
             barcode,
             ordinal: number,
@@ -325,10 +326,12 @@ pub fn validate_samples(
         // then add in the undetermined sample.  The ordinal must be larger than the maximum
         // ordinal of an existing sample.
         let undetermined_ordinal = prev_ordinal + 1;
+        let lane: Option<usize> = if lanes.len() == 1 { Some(lanes[0]) } else { None };
         samples.push(SampleMetadata::new_allow_invalid_bases(
             String::from(undetermined_name),
             BString::from(vec![b'N'; samples[0].barcode.len()]),
             undetermined_ordinal,
+            lane,
         )?);
     }
 
@@ -557,6 +560,7 @@ Sample2,GGGG
                 opts.undetermined_sample_name.to_string(),
                 BString::from("NNNN"),
                 2,
+                None,
             )
             .unwrap(),
         ];
