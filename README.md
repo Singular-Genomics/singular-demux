@@ -38,7 +38,7 @@ This repository is home to the `sgdemux` tool for demultiplexing sequencing data
 
 ### From Bioconda
 
-Install from [`bioconda`](https://bioconda.github.io/) with:
+Install from [`bioconda`](https://bioconda.github.io/) with following command. Please create new Conda environment for sgdemux to prevent dependency clashes. 
 
 ```console
 conda install -c bioconda sgdemux
@@ -46,7 +46,7 @@ conda install -c bioconda sgdemux
 
 ### From Releases
 
-Install from pre-built binaries on the [Releases page](releases)
+Install from pre-built binaries on the [Releases page][releases]
 
 ### From Source
 
@@ -77,7 +77,7 @@ Contributions are welcome.  See the [Contributing Guidelines](Contributing.md) f
 The input FASTQs _must_ be block compressed (e.g. with [`bgzip`](http://www.htslib.org/doc/bgzip.html)); uncompressed or non-bgzf gzipped input files are not supported as performance would be significantly degraded.
 
 The primary options that affect demultiplexing are `--allowed-mismatches` and `--min-delta`.  Together these specify a) how well a sample barcode in a sequencing read must match an expected barcode and b) how much worse the next best match must be.
-The default options of `--allowed-mismatches 1 --min-delta 2` will only match a set of FASTQ records to an expected barcode if, across all barcode reads, there is at most one mismatch vs. the expected barcode _and_ there are no matches to other expected barcodes with fewer than three mismatches.
+The default options of `--allowed-mismatches 1 --min-delta 1` will only match a set of FASTQ records to an expected barcode if, across all barcode reads, there is at most one mismatch vs. the expected barcode _and_ there are no matches to other expected barcodes with fewer than two mismatches.
 
 Several other options affect how demultiplexing is performed, and for these to be fully understood it is necessary to understand the order in which they are applied in the demultiplexing process.  Operations are ordered as follows:
 
@@ -183,7 +183,7 @@ This is useful if, e.g., FASTQs have been trimmed and/or contain reads of varyin
 
 For more details on Read Structures, and how to validate them, see [this detailed description](https://github.com/fulcrumgenomics/fgbio/wiki/Read-Structures).
 
-Read Structures must not be provided when using a path prefix for the input FASTQs.  In that case,
+Read Structures are not required to be provided when using a path prefix for the input FASTQs.  In that case,
 the read structure will be inferred from the FASTQ name.  See: [Auto-detecting FASTQS from a Path Prefix](#auto-detecting-fastqs-from-a-path-prefix).
 
 When providing the input FASTQs explicitly, one Read Structure must be provided for each input FASTQ file, in the same order.  Matching the set of reads specified in the FASTQ files section above one might specify:
@@ -269,7 +269,7 @@ then the `Sample_Barcode` field for each sample should be composed as follows:
 | --read-structures                | No       | n/a           | Read structures, one per input FASTQ. Do not provide when using a path prefix for FASTQs.                                                                                                                                                                                                                                       |
 | --output-dir                     | Yes      | n/a           | Path to an output directory to write into.                                                                                                                                                                                                                                                                                      |
 | --allowed-mismatches             | No       | 1             | The number of mismatches allowed, in total, between expected and observed barcode bases in order to match a read to a sample.                                                                                                                                                                                                   |
-| --min-delta                      | No       | 2             | The minimum number of mismatches by which the best match for a read is better than the next-best match for a read in order to accept the best match.                                                                                                                                                                            |
+| --min-delta                      | No       | 1             | The minimum number of mismatches by which the best match for a read is better than the next-best match for a read in order to accept the best match.                                                                                                                                                                            |
 | --free-ns                        | No       | 1             | The number of observed Ns (no-calls) in the barcode read(s) that are allowed for "free" before treating subsequent Ns as mismatches.                                                                                                                                                                                            |
 | --max-no-calls                   | No       | n/a           | If specified, do not match any reads whose barcode reads contain more than this many Ns.                                                                                                                                                                                                                                        |
 | --quality-mask-threshold         | No       | n/a           | Mask to N template bases in all input reads whose base quality is below the specified value(s). A single value may be specified, which is then applied to all input reads/FASTQs. Alternatively one value per input FASTQ may be provided in the same order as the FASTQs. Sample barcode/index and UMI bases are never masked. |
