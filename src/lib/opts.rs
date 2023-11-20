@@ -120,7 +120,7 @@ pub struct Opts {
 
     /// The minimum allowed difference between an observed barcode and the second closest expected
     /// barcode.
-    #[clap(long, short = 'd', default_value = "1", display_order = 6)]
+    #[clap(long, short = 'd', default_value = "2", display_order = 6)]
     pub min_delta: usize,
 
     /// Number of N's to allow in a barcode without counting against the allowed_mismatches
