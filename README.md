@@ -79,7 +79,7 @@ Contributions are welcome.  See the [Contributing Guidelines](Contributing.md) f
 The input FASTQs _must_ be block compressed (e.g. with [`bgzip`](http://www.htslib.org/doc/bgzip.html)); uncompressed or non-bgzf gzipped input files are not supported as performance would be significantly degraded.
 
 The primary options that affect demultiplexing are `--allowed-mismatches` and `--min-delta`.  Together these specify a) how well a sample barcode in a sequencing read must match an expected barcode and b) how much worse the next best match must be.
-The default options of `--allowed-mismatches 1 --min-delta 1` will only match a set of FASTQ records to an expected barcode if, across all barcode reads, there is at most one mismatch vs. the expected barcode _and_ there are no matches to other expected barcodes with fewer than two mismatches.
+The default options of `--allowed-mismatches 1 --min-delta 2` will only match a set of FASTQ records to an expected barcode if, across all barcode reads, there is at most one mismatch vs. the expected barcode _and_ there are no matches to other expected barcodes with fewer than two mismatches.
 
 Several other options affect how demultiplexing is performed, and for these to be fully understood it is necessary to understand the order in which they are applied in the demultiplexing process.  Operations are ordered as follows:
 
