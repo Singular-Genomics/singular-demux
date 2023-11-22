@@ -41,12 +41,15 @@ This repository is home to the `sgdemux` tool for demultiplexing sequencing data
 Install from [`bioconda`](https://bioconda.github.io/) with:
 
 ```console
-conda install -c bioconda sgdemux
+conda create -n sgdemux -c bioconda sgdemux
+conda activate sgdemux
 ```
 
 ### From Releases
 
-Install from pre-built binaries on the [Releases page](releases)
+Install from pre-built binaries on the [Releases page][releases]
+
+[releases]: https://github.com/Singular-Genomics/singular-demux/releases
 
 ### From Source
 
@@ -183,7 +186,7 @@ This is useful if, e.g., FASTQs have been trimmed and/or contain reads of varyin
 
 For more details on Read Structures, and how to validate them, see [this detailed description](https://github.com/fulcrumgenomics/fgbio/wiki/Read-Structures).
 
-Read Structures must not be provided when using a path prefix for the input FASTQs.  In that case,
+Read Structures are not required to be provided when using a path prefix for the input FASTQs.  In that case,
 the read structure will be inferred from the FASTQ name.  See: [Auto-detecting FASTQS from a Path Prefix](#auto-detecting-fastqs-from-a-path-prefix).
 
 When providing the input FASTQs explicitly, one Read Structure must be provided for each input FASTQ file, in the same order.  Matching the set of reads specified in the FASTQ files section above one might specify:
