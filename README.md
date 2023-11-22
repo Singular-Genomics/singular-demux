@@ -38,10 +38,11 @@ This repository is home to the `sgdemux` tool for demultiplexing sequencing data
 
 ### From Bioconda
 
-Install from [`bioconda`](https://bioconda.github.io/) with following command. Please create a new Conda environment for sgdemux to prevent dependency clashes. 
+Install from [`bioconda`](https://bioconda.github.io/) with:
 
 ```console
-conda install -c bioconda sgdemux
+conda create -n sgdemux -c bioconda sgdemux
+conda activate sgdemux
 ```
 
 ### From Releases
