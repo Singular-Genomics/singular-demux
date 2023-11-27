@@ -201,11 +201,12 @@ impl SampleMetadata {
     }
 
     /// Validate a collection of [`SampleMetadata`] barcodes by checking that all sample barcodes
-    /// are >= `min_mismatches` away from each other by hamming distance.
+    /// are >= `min_mismatches` and > `min_delta` away from each other by hamming distance.
     ///
     /// # Errors
     ///
-    /// - [`SampleSheetError::BarcodeCollision`] if two barcodes are with the allowed distance
+    /// - [`SampleSheetError::BarcodeCollision`] if two barcodes are with the allowed mismatch distance
+    /// - [`SampleSheetError::MinDeltaTooHigh`] if two barcodes are within the allowed min-delta distance
     /// - [`SampleSheetError::UnequalBarcodeLengths`] if two barcodes have unequal length
     pub fn validate_barcode_pairs(
         samples: &[Self],
@@ -238,6 +239,7 @@ impl SampleMetadata {
                     });
                 }
 
+                // Ensure that barcode distances are greater than min_delta distance
                 if distance <= min_delta {
                     return Err(SampleSheetError::MinDeltaTooHigh {
                         sample_a: sample.sample_id.clone(),
