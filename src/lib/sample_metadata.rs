@@ -278,6 +278,7 @@ impl AsRef<SampleMetadata> for SampleMetadata {
 pub fn validate_samples(
     mut samples: Vec<SampleMetadata>,
     min_mismatch: Option<usize>,
+    min_delta: Option<usize>,
     undetermined_name: &str,
     lanes: &[usize],
 ) -> Result<Vec<SampleMetadata>, SampleSheetError> {

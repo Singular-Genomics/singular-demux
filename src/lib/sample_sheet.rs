@@ -88,6 +88,19 @@ pub enum SampleSheetError {
         distance: usize,
     },
 
+
+    #[error(
+        "The min-delta is set at {min_delta}. The hamming distance between {sample_a}:{barcode_a} and {sample_b}:{barcode_b} is {distance}. Because min-delta is greater than the hamming distance between these samples, reads that perfect match the barcodes of these samples will not be assigned to these samples."
+    )]
+    MinDeltaTooHigh {
+        sample_a: String,
+        barcode_a: String,
+        sample_b: String,
+        barcode_b: String,
+        distance: usize,
+		min_delta: usize,
+    },
+
     #[error("Duplicate Sample_ID found: {id}")]
     DuplicateSampleId { id: String },
 
@@ -240,6 +253,7 @@ impl SampleSheet {
         let samples = validate_samples(
             samples,
             Some(opts.allowed_mismatches),
+            Some(opts.min_delta),
             &opts.undetermined_sample_name,
             &opts.lane,
         )?;
@@ -430,6 +444,7 @@ impl SampleSheet {
         let samples = validate_samples(
             samples,
             Some(opts.allowed_mismatches),
+            Some(opts.min_delta),
             &opts.undetermined_sample_name,
             &opts.lane,
         )?;
