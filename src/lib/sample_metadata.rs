@@ -210,6 +210,7 @@ impl SampleMetadata {
     pub fn validate_barcode_pairs(
         samples: &[Self],
         min_mismatches: usize,
+        min_delta: usize,
     ) -> Result<(), SampleSheetError> {
         for (i, sample) in samples.iter().enumerate() {
             let barcode = &sample.barcode;
@@ -234,6 +235,17 @@ impl SampleMetadata {
                         sample_b: other.sample_id.clone(),
                         barcode_b: other.barcode.to_string(),
                         distance,
+                    });
+                }
+
+                if distance <= min_delta {
+                    return Err(SampleSheetError::MinDeltaTooHigh {
+                        sample_a: sample.sample_id.clone(),
+                        barcode_a: sample.barcode.to_string(),
+                        sample_b: other.sample_id.clone(),
+                        barcode_b: other.barcode.to_string(),
+                        distance,
+						min_delta,
                     });
                 }
             }
@@ -278,7 +290,7 @@ impl AsRef<SampleMetadata> for SampleMetadata {
 pub fn validate_samples(
     mut samples: Vec<SampleMetadata>,
     min_mismatch: Option<usize>,
-    min_delta: Option<usize>,
+    min_delta: usize,
     undetermined_name: &str,
     lanes: &[usize],
 ) -> Result<Vec<SampleMetadata>, SampleSheetError> {
@@ -320,7 +332,7 @@ pub fn validate_samples(
         }
 
         if let Some(min_mismatch) = min_mismatch {
-            SampleMetadata::validate_barcode_pairs(&samples, min_mismatch)?;
+            SampleMetadata::validate_barcode_pairs(&samples, min_mismatch, min_delta)?;
         }
 
         // If we have more than one sample, or we have one sample with an actual barcode

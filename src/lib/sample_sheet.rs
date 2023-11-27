@@ -253,7 +253,7 @@ impl SampleSheet {
         let samples = validate_samples(
             samples,
             Some(opts.allowed_mismatches),
-            Some(opts.min_delta),
+            opts.min_delta,
             &opts.undetermined_sample_name,
             &opts.lane,
         )?;
@@ -444,7 +444,7 @@ impl SampleSheet {
         let samples = validate_samples(
             samples,
             Some(opts.allowed_mismatches),
-            Some(opts.min_delta),
+            opts.min_delta,
             &opts.undetermined_sample_name,
             &opts.lane,
         )?;
