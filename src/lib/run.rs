@@ -759,11 +759,11 @@ mod test {
             vec![], // sample3
             vec![], // sample4
             if omit_control_reads {
-                vec![SAMPLE_BARCODE_4, b"AAAAAAAAGANNNNNNN".as_slice()]
+                vec![b"GGGGGGTGGATTACAGA".as_slice(), b"AAAAAAAAGANNNNNNN".as_slice()]
             } else {
                 vec![
                     b"AAAAAAAAGATTACTTT".as_slice(),
-                    SAMPLE_BARCODE_4,
+                    b"GGGGGGTGGATTACAGA".as_slice(),
                     b"AAAAAAAAGANNNNNNN".as_slice(),
                 ]
             }, // undetermined
