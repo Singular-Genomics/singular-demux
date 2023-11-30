@@ -777,9 +777,9 @@ mod test {
             read-structures,8B +T\n\
             [Data]\n\
             Sample_ID,Index1_Name,Index1_Sequence,Index2_Name,Index2_SequenceLane,Lane,Lane_Name,Project,Loading_Concentration,Application,Notes,Reference\n\
-            S1,I1,AAAA,I2,CCCC,1,Lane1,S1_Project,,,,\n\
-            S2,I1,GGGG,I2,TTTT,1,Lane1,S2_Project,,,,\n\
-            S3,I1,ATTA,I2,GCCG,1,Lane1,S3_Project,,,,\n\
+            S1,I1,AAAACCCC,I2,CCCC,1,Lane1,S1_Project,,,,\n\
+            S2,I1,GGGGTTTT,I2,TTTT,1,Lane1,S2_Project,,,,\n\
+            S3,I1,ATTAGCCG,I2,GCCG,1,Lane1,S3_Project,,,,\n\
             ".to_string();
 
         let dir = tempfile::tempdir().unwrap();
