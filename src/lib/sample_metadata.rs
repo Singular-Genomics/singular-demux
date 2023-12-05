@@ -247,7 +247,7 @@ impl SampleMetadata {
                         sample_b: other.sample_id.clone(),
                         barcode_b: other.barcode.to_string(),
                         distance,
-						min_delta,
+                        min_delta,
                     });
                 }
             }
@@ -562,7 +562,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn test_min_delta_too_high() {
         let tempdir = tempdir().unwrap();
@@ -577,7 +576,12 @@ mod tests {
 
         to_path(&input_path, samples.iter()).unwrap();
 
-        let opts = Opts { sample_metadata: input_path, allowed_mismatches: 1, min_delta: 2, ..Opts::default() };
+        let opts = Opts {
+            sample_metadata: input_path,
+            allowed_mismatches: 1,
+            min_delta: 2,
+            ..Opts::default()
+        };
 
         assert_matches!(
             SampleSheet::from_path(opts),

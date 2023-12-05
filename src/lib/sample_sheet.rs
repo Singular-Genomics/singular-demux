@@ -88,7 +88,6 @@ pub enum SampleSheetError {
         distance: usize,
     },
 
-
     #[error(
         "The min-delta is set at {min_delta}. The hamming distance between {sample_a}:{barcode_a} and {sample_b}:{barcode_b} is {distance}. Because min-delta is greater than the hamming distance between these samples, reads that perfect match the barcodes of these samples will not be assigned to these samples."
     )]
@@ -98,7 +97,7 @@ pub enum SampleSheetError {
         sample_b: String,
         barcode_b: String,
         distance: usize,
-		min_delta: usize,
+        min_delta: usize,
     },
 
     #[error("Duplicate Sample_ID found: {id}")]

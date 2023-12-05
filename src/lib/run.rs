@@ -409,7 +409,7 @@ mod test {
             sample_metadata: metadata.clone(),
             read_structures: vec![read_structure],
             allowed_mismatches: 2,
-            min_delta: 1,//
+            min_delta: 1, //
             demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
@@ -472,7 +472,7 @@ mod test {
             sample_metadata: metadata,
             read_structures,
             allowed_mismatches: 2,
-            min_delta: 1,//
+            min_delta: 1, //
             ..Opts::default()
         };
         run(opts).unwrap();
@@ -502,7 +502,7 @@ mod test {
             sample_metadata: buggy_metadata,
             read_structures,
             allowed_mismatches: 2,
-            min_delta: 1,//
+            min_delta: 1, //
             ..Opts::default()
         };
         run(opts).unwrap();
@@ -609,7 +609,7 @@ mod test {
             sample_metadata: metadata,
             read_structures: vec![read_structure],
             allowed_mismatches: 2,
-            min_delta: 1,//
+            min_delta: 1, //
             demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
@@ -787,7 +787,7 @@ mod test {
             sample_metadata: metadata,
             read_structures,
             allowed_mismatches: 2,
-            min_delta: 1,//
+            min_delta: 1, //
             demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
@@ -850,7 +850,7 @@ mod test {
             sample_metadata: metadata,
             read_structures,
             allowed_mismatches: 2,
-            min_delta: 1,//
+            min_delta: 1, //
             demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
@@ -903,7 +903,7 @@ mod test {
             sample_metadata: metadata,
             read_structures,
             allowed_mismatches: 2,
-            min_delta: 1,//
+            min_delta: 1, //
             demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
@@ -977,7 +977,7 @@ mod test {
             sample_metadata: metadata,
             read_structures,
             allowed_mismatches: 2,
-            min_delta: 1,//
+            min_delta: 1, //
             demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
@@ -1101,7 +1101,7 @@ mod test {
             sample_metadata: metadata,
             read_structures: vec![ReadStructure::from_str("17B39T").unwrap()],
             allowed_mismatches: 2,
-            min_delta: 1,//
+            min_delta: 1, //
             demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
