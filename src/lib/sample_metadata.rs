@@ -562,6 +562,29 @@ mod tests {
         );
     }
 
+
+    #[test]
+    fn test_min_delta_too_high() {
+        let tempdir = tempdir().unwrap();
+        let input_path = tempdir.path().join("input.csv");
+        let samples = vec![
+            SampleMetadata::new(String::from("Sample1"), BString::from("AAAA"), 0, 2).unwrap(),
+            SampleMetadata::new(String::from("Sample2"), BString::from("TTTT"), 1, 3).unwrap(),
+            SampleMetadata::new(String::from("Sample3"), BString::from("CCCC"), 2, 4).unwrap(),
+            SampleMetadata::new(String::from("Sample4"), BString::from("GGGG"), 3, 5).unwrap(),
+            SampleMetadata::new(String::from("Sample5"), BString::from("GTGC"), 4, 6).unwrap(),
+        ];
+
+        to_path(&input_path, samples.iter()).unwrap();
+
+        let opts = Opts { sample_metadata: input_path, allowed_mismatches: 1, min_delta: 2, ..Opts::default() };
+
+        assert_matches!(
+            SampleSheet::from_path(opts),
+            Err(SampleSheetError::MinDeltaTooHigh { .. })
+        );
+    }
+
     #[test]
     fn test_blank_lines_skipped() {
         let tempdir = tempdir().unwrap();
