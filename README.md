@@ -80,7 +80,18 @@ Contributions are welcome.  See the [Contributing Guidelines](Contributing.md) f
 The input FASTQs _must_ be block compressed (e.g. with [`bgzip`](http://www.htslib.org/doc/bgzip.html)); uncompressed or non-bgzf gzipped input files are not supported as performance would be significantly degraded.
 
 The primary options that affect demultiplexing are `--allowed-mismatches` and `--min-delta`.  Together these specify a) how well a sample barcode in a sequencing read must match an expected barcode and b) how much worse the next best match must be.
-The default options of `--allowed-mismatches 1 --min-delta 2` will only match a set of FASTQ records to an expected barcode if, across all barcode reads, there is at most one mismatch vs. the expected barcode _and_ there are no matches to other expected barcodes with fewer than three mismatches.
+The default options of `--allowed-mismatches 1 --min-delta 2` will only match a set of FASTQ records to an expected barcode if, across all barcode reads, there is at most one mismatch (allowed mismatches) vs. the expected barcode _and_ the difference (minimmum delta) between the number of mismatches of the best and second best matching barcode is greater than two mismatches.
+Note: the allowed mismatches is not used when determining the next-best matching barcode.
+
+For additional examples, consider `--allowed-mismatches 3 --min-delta 1`, with two barcodes `b1` and `b2`:
+
+1. If b1 matches with 2 mismatches, and b2 matches with 3 mismatches, then the delta between the number of mismatches is 1, which _is not_ greater than `--min-delta`, and therefore the read is not assigned to a barcode.
+1. If b1 matches with 1 mismatch, and b2 matches with 3 mismatches, then the delta between the number of mismatches is 2, which _is_ greater than `--min-delta`, and therefore the read is assigned to barcode `b1`.
+1. If b1 matches with 2 mismatch, and b2 matches with 2 mismatches, then the delta between the number of mismatches is 2, which _is_ greater than `--min-delta`, and therefore the read is assigned to barcode `b1`.
+1. If b1 matches with 0 mismatches, and b2 matches with 1 mismatches, then the delta between the number of mismatches is 1, which _is not_ greater than `--min-delta`, and therefore the read is not assigned to a barcode.
+1. If b1 matches with 3 mismatches, and b2 matches with 6 mismatches, then the delta between the number of mismatches is 2, which _is_ greater than `--min-delta`, and the number of mismatches for b1 is less than equal to than `--allowed-mismatches`, and thefore read is assigned to barcode `b1`.
+1. If b1 matches with 4 mismatches, and b2 matches with 6 mismatches, then the delta between the number of mismatches is 2, which _is_ greater than `--min-delta`, and but the number of mismatches for b1 is greater than `--allowed-mismatches`, and thefore the read is not assigned to a barcode.
+
 
 Several other options affect how demultiplexing is performed, and for these to be fully understood it is necessary to understand the order in which they are applied in the demultiplexing process.  Operations are ordered as follows:
 
