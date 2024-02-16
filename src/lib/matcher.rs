@@ -36,6 +36,14 @@ impl MatchResult {
             MatchResult::Match { barcode, .. } | MatchResult::NoMatch { barcode } => barcode,
         }
     }
+
+    pub fn is_match(&self) -> bool {
+        matches!(self, Self::Match { .. })
+    }
+
+    pub fn is_no_match(&self) -> bool {
+        !self.is_match()
+    }
 }
 
 #[derive(ArgEnum, Debug, Clone, Copy, PartialEq, Eq)]
@@ -334,12 +342,10 @@ mod test {
     use ahash::AHashMap;
     use bstr::{BString, B};
 
-    use crate::{
-        matcher::{hamming_distance, PreComputeMatcher, PrecomputedMatch},
-        sample_metadata::SampleMetadata,
-    };
+    use super::{hamming_distance, PreComputeMatcher, PrecomputedMatch};
+    use crate::sample_metadata::SampleMetadata;
 
-    fn create_sample(barcode: BString) -> SampleMetadata {
+    pub(super) fn create_sample(barcode: BString) -> SampleMetadata {
         SampleMetadata::new(String::from("Sample"), barcode, 0, 2).unwrap()
     }
 
@@ -452,5 +458,223 @@ mod test {
     fn test_hamming_dist_all_mismatches() {
         let dist = hamming_distance(b"GATTACA", b"CTAATGT", 0);
         assert_eq!(dist, 7);
+    }
+
+    #[test]
+    fn test_hamming_dist_free_ns() {
+        let dist = hamming_distance(b"GATTACN", b"GATTACN", 0);
+        assert_eq!(dist, 1);
+
+        let dist = hamming_distance(b"GATTACA", b"GATTACN", 0);
+        assert_eq!(dist, 1);
+
+        let dist = hamming_distance(b"GATTACN", b"GATTACA", 0);
+        assert_eq!(dist, 1);
+
+        let dist = hamming_distance(b"GATTACN", b"GATTACN", 1);
+        assert_eq!(dist, 0);
+
+        let dist = hamming_distance(b"GATTACA", b"GATTACN", 1);
+        assert_eq!(dist, 0);
+
+        let dist = hamming_distance(b"GATTACN", b"GATTACA", 1);
+        assert_eq!(dist, 0);
+    }
+}
+
+#[cfg(test)]
+mod test_matches {
+    use super::{find_independently, hamming_distance, MatchResult, Matcher, PreComputeMatcher};
+    use crate::sample_metadata::SampleMetadata;
+
+    use super::test::create_sample;
+
+    pub(super) fn create_samples(barcodes: &[&str]) -> Vec<SampleMetadata> {
+        barcodes.iter().map(|b| create_sample(bstr::BString::from(b.clone()))).collect()
+    }
+
+    // Helper fun to make find_independent call more concise
+    pub(super) fn find_ind(
+        barcode: Vec<u8>,
+        samples: &[SampleMetadata],
+        max_mismatches: usize,
+        min_delta: usize,
+    ) -> MatchResult {
+        find_independently(barcode, samples, max_mismatches, min_delta, 0, hamming_distance)
+    }
+
+    #[test]
+    fn test_find_ind_match() {
+        // Small example
+        let sample_b1 = "AAAA";
+        let sample_b2 = "AACC";
+        let samples = create_samples(&[sample_b1, sample_b2]);
+
+        // Observed barcode with best and next distance 0 and 2; delta is 2;
+        let observed_barcode = b"AAAA".to_vec();
+        assert_eq!(hamming_distance(&observed_barcode, sample_b1.as_bytes(), 0), 0);
+        assert_eq!(hamming_distance(&observed_barcode, sample_b2.as_bytes(), 0), 2);
+
+        // Find matches
+        let max_mismatches = 2;
+        let min_delta = 1;
+        let ind_result = find_ind(observed_barcode.clone(), &samples, max_mismatches, min_delta);
+        assert!(ind_result.is_match());
+    }
+
+    #[test]
+    fn test_precompute_match() {
+        // Small example
+        let sample_b1 = "AAAA";
+        let sample_b2 = "AACC";
+        let samples = create_samples(&[sample_b1, sample_b2]);
+
+        // Observed barcode with best and next distance 0 and 2; delta is 2;
+        let observed_barcode = b"AAAA".to_vec();
+        // Find matches
+        let max_mismatches = 2;
+        let min_delta = 1;
+        let matcher = PreComputeMatcher::new(&samples, max_mismatches, min_delta, 0);
+        let pc_result = matcher.find(observed_barcode.clone());
+        assert!(pc_result.is_match());
+    }
+
+    #[test]
+    fn test_find_ind_no_match() {
+        let sample_b1 = "AAAA";
+        let sample_b2 = "AACC";
+        let samples: Vec<SampleMetadata> = create_samples(&[sample_b1, sample_b2]);
+
+        let observed_barcode = b"AAAG".to_vec();
+        // best and next bast hamming distance; delta is 1.
+        assert_eq!(hamming_distance(&observed_barcode, sample_b1.as_bytes(), 0), 1);
+        assert_eq!(hamming_distance(&observed_barcode, sample_b2.as_bytes(), 0), 2);
+
+        let max_mismatches = 2;
+        let min_delta = 1;
+        let ind_result = find_ind(observed_barcode.clone(), &samples, max_mismatches, min_delta);
+        assert!(ind_result.is_no_match());
+
+        let matcher = PreComputeMatcher::new(&samples, max_mismatches, min_delta, 0);
+        let pc_result = matcher.find(observed_barcode.clone());
+        assert!(pc_result.is_no_match());
+
+        assert_eq!(ind_result, pc_result);
+    }
+
+    #[test]
+    fn test_precompute_no_match() {
+        let sample_b1 = "AAAA";
+        let sample_b2 = "AACC";
+        let samples = create_samples(&[sample_b1, sample_b2]);
+
+        let observed_barcode = b"AAAG".to_vec();
+
+        let max_mismatches = 2;
+        let min_delta = 1;
+        let matcher = PreComputeMatcher::new(&samples, max_mismatches, min_delta, 0);
+        let pc_result = matcher.find(observed_barcode.clone());
+        assert!(pc_result.is_no_match());
+    }
+}
+
+#[cfg(test)]
+mod test_readme_examples {
+    use super::{hamming_distance, Matcher, PreComputeMatcher};
+    use crate::sample_metadata::SampleMetadata;
+
+    use super::test_matches::{create_samples, find_ind};
+
+    struct TestConfig {
+        should_match: bool,
+        max_mismatches: usize,
+        min_delta: usize,
+        b1_dist: usize,
+        b2_dist: usize,
+    }
+
+    fn test_w_config(c: TestConfig) {
+        assert!(c.b2_dist >= c.b1_dist);
+        // Guarantee that barcodes are max_dist apart.
+        let sample_b1 = "A".repeat(c.b2_dist * 2);
+        let mut sample_b2 = "C".repeat(c.b2_dist);
+        sample_b2.push_str(&"A".repeat(c.b2_dist));
+
+        let samples: Vec<SampleMetadata> = create_samples(&[&sample_b1, &sample_b2]);
+
+        let mut observed_barcode = vec![b'G'; c.b1_dist];
+        observed_barcode.append(&mut vec![b'A'; sample_b1.len() - c.b1_dist]);
+
+        let ind_result =
+            find_ind(observed_barcode.clone(), &samples, c.max_mismatches, c.min_delta);
+        let matcher = PreComputeMatcher::new(&samples, c.max_mismatches, c.min_delta, 0);
+        let pc_result = matcher.find(observed_barcode.clone());
+
+        // check that the generated observed barcode has given distances.
+        assert_eq!(hamming_distance(&observed_barcode, sample_b1.as_bytes(), 0), c.b1_dist);
+        assert_eq!(hamming_distance(&observed_barcode, sample_b2.as_bytes(), 0), c.b2_dist);
+
+        dbg!(sample_b1);
+        dbg!(sample_b2);
+        dbg!(String::from_utf8(observed_barcode).unwrap());
+
+        if c.should_match {
+            assert!(ind_result.is_match(), "independent matcher failed to find match");
+            assert!(
+                pc_result.is_match(),
+                "independent matcher found match but precompute matcher failed to find match"
+            );
+        } else {
+            assert!(ind_result.is_no_match(), "independent matcher failed to reject match");
+            assert!(
+                pc_result.is_no_match(),
+                "independent matcher rejected match but precompute matcher failed to reject match"
+            );
+        }
+    }
+
+    fn test_readme_ex(should_match: bool, best_dist: usize, next_dist: usize) {
+        test_w_config(TestConfig {
+            should_match,
+            max_mismatches: 3,
+            min_delta: 1,
+            b1_dist: best_dist,
+            b2_dist: next_dist,
+        });
+    }
+
+    #[test]
+    fn ex1() {
+        test_readme_ex(false, 2, 3)
+    }
+
+    #[test]
+    fn ex2() {
+        test_readme_ex(true, 1, 3)
+    }
+
+    #[test]
+    fn ex3() {
+        test_readme_ex(true, 0, 2)
+    }
+
+    #[test]
+    fn ex4() {
+        test_readme_ex(false, 0, 1)
+    }
+
+    #[test]
+    fn ex5() {
+        test_readme_ex(true, 3, 6)
+    }
+
+    #[test]
+    fn ex6() {
+        test_readme_ex(false, 4, 6)
+    }
+
+    #[test]
+    fn ex7() {
+        test_readme_ex(false, 2, 2)
     }
 }
