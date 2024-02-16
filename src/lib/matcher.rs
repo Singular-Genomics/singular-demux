@@ -192,13 +192,15 @@ impl<'a> PreComputeMatcher<'a> {
 
     /// Generate all permutations of a string between min and max mismatches inclusive
     fn all_permutations(
-        barcode: &'_ [u8],
+        barcode: &[u8],
         min_mismatches: usize,
         max_mismatches: usize,
-    ) -> impl Iterator<Item = (Vec<u8>, usize)> + '_ {
+    ) -> impl Iterator<Item = (Vec<u8>, usize)> {
         let free_ns = 0;
+        // xs.iter().combinations(n) returns [] if n > xs.len();
+        let max_mismatches = max_mismatches.min(barcode.len());
         (0..barcode.len())
-            .combinations(max_mismatches)
+            .combinations(max_mismatches) // generate positions to insert mismatches
             .flat_map(move |locations| {
                 let mut this_barcode = barcode.iter().map(|c| vec![*c]).collect::<Vec<Vec<u8>>>();
                 for location in locations {
@@ -247,7 +249,7 @@ impl<'a> PreComputeMatcher<'a> {
                 let best = best_hits[0];
                 if matches
                     .iter()
-                    .filter(|m| m.hamming_dist <= best.hamming_dist + min_delta)
+                    .filter(|m| should_reject_delta(m.hamming_dist - best.hamming_dist, min_delta))
                     .count()
                     == 1
                 {
@@ -257,6 +259,13 @@ impl<'a> PreComputeMatcher<'a> {
         }
         None
     }
+}
+
+#[inline]
+fn should_reject_delta(delta: usize, min_delta: usize) -> bool {
+    // Delta is the difference best distance and next best distance.
+    // Accept delta > min_delta and reject delta <=  min_delta
+    delta <= min_delta
 }
 
 /// Finds the best barcode barcode-by-barcode
@@ -284,7 +293,7 @@ fn find_independently(
     }
     if best_sample == samples.len()
         || best_dist > max_mismatches
-        || next_best_dist - best_dist < min_delta
+        || should_reject_delta(next_best_dist - best_dist, min_delta)
     {
         MatchResult::NoMatch { barcode }
     } else {
@@ -434,6 +443,11 @@ mod test {
 
         let found = PreComputeMatcher::build_map(&samples, max_mismatches, min_delta);
         assert_eq!(expected, found);
+
+        // Check degenerate case (possible in tests) where permutations work with max_matches > barcode len
+        let l = PreComputeMatcher::build_map(&samples, 3, 0);
+        let r = PreComputeMatcher::build_map(&samples, 10, 0);
+        assert_eq!(l, r);
     }
 
     #[test]
@@ -484,13 +498,25 @@ mod test {
 
 #[cfg(test)]
 mod test_matches {
-    use super::{find_independently, hamming_distance, MatchResult, Matcher, PreComputeMatcher};
     use crate::sample_metadata::SampleMetadata;
 
     use super::test::create_sample;
+    use super::{
+        find_independently, hamming_distance, should_reject_delta, MatchResult, Matcher,
+        PreComputeMatcher,
+    };
 
     pub(super) fn create_samples(barcodes: &[&str]) -> Vec<SampleMetadata> {
-        barcodes.iter().map(|b| create_sample(bstr::BString::from(b.clone()))).collect()
+        // need unique ordinals for appropriate test output from PreComputeMatcher::build_map
+        barcodes
+            .into_iter()
+            .enumerate()
+            .map(|(i, b)| {
+                let mut s = create_sample(bstr::BString::from(b.clone()));
+                s.ordinal = i;
+                s
+            })
+            .collect()
     }
 
     // Helper fun to make find_independent call more concise
@@ -501,6 +527,23 @@ mod test_matches {
         min_delta: usize,
     ) -> MatchResult {
         find_independently(barcode, samples, max_mismatches, min_delta, 0, hamming_distance)
+    }
+
+    // A really pedantic test because prior impls had a bug.
+    #[test]
+    fn test_reject_delta() {
+        // e.g.) min_delta == 0 is the most permissive setting.
+        // When min_delta == 0:
+        //  if delta <= 0, reject
+        //  if delta > 0 (i.e. >= 1), accept
+        assert!(should_reject_delta(0, 0)); // reject
+        assert!(!should_reject_delta(1, 0)); // accept
+        assert!(!should_reject_delta(2, 0));
+
+        // min_delta == 3
+        assert!(should_reject_delta(1, 3)); // reject
+        assert!(should_reject_delta(3, 3)); // reject
+        assert!(!should_reject_delta(4, 3)); // accept
     }
 
     #[test]
@@ -580,12 +623,12 @@ mod test_matches {
 
 #[cfg(test)]
 mod test_readme_examples {
-    use super::{hamming_distance, Matcher, PreComputeMatcher};
     use crate::sample_metadata::SampleMetadata;
 
     use super::test_matches::{create_samples, find_ind};
+    use super::{hamming_distance, Matcher, PreComputeMatcher};
 
-    struct TestConfig {
+    struct SimpleTest {
         should_match: bool,
         max_mismatches: usize,
         min_delta: usize,
@@ -593,54 +636,57 @@ mod test_readme_examples {
         b2_dist: usize,
     }
 
-    fn test_w_config(c: TestConfig) {
-        assert!(c.b2_dist >= c.b1_dist);
-        // Guarantee that barcodes are max_dist apart.
-        let sample_b1 = "A".repeat(c.b2_dist * 2);
-        let mut sample_b2 = "C".repeat(c.b2_dist);
-        sample_b2.push_str(&"A".repeat(c.b2_dist));
+    impl SimpleTest {
+        fn run(self) {
+            assert!(self.b2_dist >= self.b1_dist);
 
-        let samples: Vec<SampleMetadata> = create_samples(&[&sample_b1, &sample_b2]);
+            // generate some barcodes
+            let sample_b1 = "A".repeat(self.b2_dist);
+            let sample_b2 = "T".repeat(self.b2_dist);
 
-        let mut observed_barcode = vec![b'G'; c.b1_dist];
-        observed_barcode.append(&mut vec![b'A'; sample_b1.len() - c.b1_dist]);
+            let samples: Vec<SampleMetadata> = create_samples(&[&sample_b1, &sample_b2]);
 
-        let ind_result =
-            find_ind(observed_barcode.clone(), &samples, c.max_mismatches, c.min_delta);
-        let matcher = PreComputeMatcher::new(&samples, c.max_mismatches, c.min_delta, 0);
-        let pc_result = matcher.find(observed_barcode.clone());
+            let mut observed_barcode = vec![b'G'; self.b1_dist];
+            observed_barcode.append(&mut vec![b'A'; sample_b1.len() - self.b1_dist]);
 
-        // check that the generated observed barcode has given distances.
-        assert_eq!(hamming_distance(&observed_barcode, sample_b1.as_bytes(), 0), c.b1_dist);
-        assert_eq!(hamming_distance(&observed_barcode, sample_b2.as_bytes(), 0), c.b2_dist);
+            let ind_result =
+                find_ind(observed_barcode.clone(), &samples, self.max_mismatches, self.min_delta);
+            let matcher = PreComputeMatcher::new(&samples, self.max_mismatches, self.min_delta, 0);
+            let pc_result = matcher.find(observed_barcode.clone());
 
-        dbg!(sample_b1);
-        dbg!(sample_b2);
-        dbg!(String::from_utf8(observed_barcode).unwrap());
+            // check that the generated observed barcode has given distances.
+            assert_eq!(hamming_distance(&observed_barcode, sample_b1.as_bytes(), 0), self.b1_dist);
+            assert_eq!(hamming_distance(&observed_barcode, sample_b2.as_bytes(), 0), self.b2_dist);
 
-        if c.should_match {
-            assert!(ind_result.is_match(), "independent matcher failed to find match");
-            assert!(
-                pc_result.is_match(),
-                "independent matcher found match but precompute matcher failed to find match"
-            );
-        } else {
-            assert!(ind_result.is_no_match(), "independent matcher failed to reject match");
-            assert!(
+            dbg!(sample_b1);
+            dbg!(sample_b2);
+            dbg!(String::from_utf8(observed_barcode).unwrap());
+
+            if self.should_match {
+                assert!(ind_result.is_match(), "independent matcher failed to find match");
+                assert!(
+                    pc_result.is_match(),
+                    "independent matcher found match but precompute matcher failed to find match"
+                );
+            } else {
+                assert!(ind_result.is_no_match(), "independent matcher failed to reject match");
+                assert!(
                 pc_result.is_no_match(),
                 "independent matcher rejected match but precompute matcher failed to reject match"
             );
+            }
         }
     }
 
     fn test_readme_ex(should_match: bool, best_dist: usize, next_dist: usize) {
-        test_w_config(TestConfig {
+        SimpleTest {
             should_match,
             max_mismatches: 3,
             min_delta: 1,
             b1_dist: best_dist,
             b2_dist: next_dist,
-        });
+        }
+        .run();
     }
 
     #[test]

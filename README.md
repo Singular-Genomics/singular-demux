@@ -86,22 +86,22 @@ Note: the allowed mismatches is not used when determining the next-best matching
 For additional examples, consider `--allowed-mismatches 3 --min-delta 1`, with two barcodes `b1` and `b2`:
 
 1. If b1 matches with 2 mismatches, and b2 matches with 3 mismatches, then the delta between the number of mismatches is 1, which _is not_ greater than `--min-delta`, and therefore the read is not assigned to a barcode.
-2. If b1 matches with 1 mismatch, and b2 matches with 3 mismatches, then the delta between the number of mismatches is 2, which _is_ greater than `--min-delta`, and therefore the read is assigned to barcode `b1`.
-3. If b1 matches with 0 mismatch, and b2 matches with 2 mismatches, then the delta between the number of mismatches is 2, which _is_ greater than `--min-delta`, and therefore the read is assigned to barcode `b1`.
-4. If b1 matches with 0 mismatches, and b2 matches with 1 mismatches, then the delta between the number of mismatches is 1, which _is not_ greater than `--min-delta`, and therefore the read is not assigned to a barcode.
-5. If b1 matches with 3 mismatches, and b2 matches with 6 mismatches, then the delta between the number of mismatches is 2, which _is_ greater than `--min-delta`, and the number of mismatches for b1 is less than equal to than `--allowed-mismatches`, and thefore read is assigned to barcode `b1`.
-6. If b1 matches with 4 mismatches, and b2 matches with 6 mismatches, then the delta between the number of mismatches is 2, which _is_ greater than `--min-delta`, and but the number of mismatches for b1 is greater than `--allowed-mismatches`, and thefore the read is not assigned to a barcode.
-7. If b1 matches with 2 mismatch, and b2 matches with 2 mismatches, then the delta between the number of mismatches is 0, which _is not_ greater than `--min-delta`, and therefore the read is not assigned to a
+1. If b1 matches with 1 mismatch, and b2 matches with 3 mismatches, then the delta between the number of mismatches is 2, which _is_ greater than `--min-delta`, and therefore the read is assigned to barcode `b1`.
+1. If b1 matches with 0 mismatch, and b2 matches with 2 mismatches, then the delta between the number of mismatches is 2, which _is_ greater than `--min-delta`, and therefore the read is assigned to barcode `b1`.
+1. If b1 matches with 0 mismatches, and b2 matches with 1 mismatches, then the delta between the number of mismatches is 1, which _is not_ greater than `--min-delta`, and therefore the read is not assigned to a barcode.
+1. If b1 matches with 3 mismatches, and b2 matches with 6 mismatches, then the delta between the number of mismatches is 3, which _is_ greater than `--min-delta`, and the number of mismatches for b1 is less than equal to than `--allowed-mismatches`, and thefore read is assigned to barcode `b1`.
+1. If b1 matches with 4 mismatches, and b2 matches with 6 mismatches, then the delta between the number of mismatches is 2, which _is_ greater than `--min-delta`, but the number of mismatches for b1 is greater than `--allowed-mismatches`, and thefore the read is not assigned to a barcode.
+1. If b1 matches with 2 mismatch, and b2 matches with 2 mismatches, then the delta between the number of mismatches is 0, which _is not_ greater than `--min-delta`, and therefore the read is not assigned to a
 barcode.
 
 Several other options affect how demultiplexing is performed, and for these to be fully understood it is necessary to understand the order in which they are applied in the demultiplexing process.  Operations are ordered as follows:
 
 1. A record is read in from each of the input FASTQ files and broken into read "segments" using the supplied read structures.
-2. If `--filter-control-reads` is specified and the reads are marked as controls in the FASTQ header, the reads are discarded (i.e. they do not get written to _any_ output files).
-3. If `--filter-failing-quality` is specified and the reads are marked as quality failures in the FASTQ header, the reads are discarded (i.e. they do not get written to _any_ output files).
-4. If one or more `--quality-mask-threshold` values are supplied, template bases in all input reads that have base quality below the given threshold value are masked to `N`.
-5. Match the reads against the set of expected barcodes; if the sample barcode has more `N` bases in it that specified by `--max-no-calls` or does not match to an expected barcode within defined parameters, the reads will be assigned to the undetermined sample.
-6. Write out the subset of the FASTQs/read segments specified by `--output-types` to the FASTQ file(s) for the assigned sample.
+1. If `--filter-control-reads` is specified and the reads are marked as controls in the FASTQ header, the reads are discarded (i.e. they do not get written to _any_ output files).
+1. If `--filter-failing-quality` is specified and the reads are marked as quality failures in the FASTQ header, the reads are discarded (i.e. they do not get written to _any_ output files).
+1. If one or more `--quality-mask-threshold` values are supplied, template bases in all input reads that have base quality below the given threshold value are masked to `N`.
+1. Match the reads against the set of expected barcodes; if the sample barcode has more `N` bases in it that specified by `--max-no-calls` or does not match to an expected barcode within defined parameters, the reads will be assigned to the undetermined sample.
+1. Write out the subset of the FASTQs/read segments specified by `--output-types` to the FASTQ file(s) for the assigned sample.
 
 ## Usage
 
