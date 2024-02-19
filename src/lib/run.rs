@@ -733,7 +733,7 @@ mod test {
             .to_owned_record(),
             Fq {
                 name: "4", // matches the fourth sample perfectly and 3rd barcode with two mismatches, delta too small -> unmatched
-                //matches the third and fourth sample with one mismatches, delta too small -> unmatched
+                // matches the third and fourth sample with one mismatches, delta too small -> unmatched
                 comment: Some("4:N:0:SampleNumber"),
                 // bases: &[SAMPLE_BARCODE_4, &[b'A'; 100]].concat(),
                 bases: &[b"GGGGGGTGGATTACAGA".as_slice(), &[b'A'; 100]].concat(),
