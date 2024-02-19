@@ -1101,7 +1101,7 @@ mod test {
             sample_metadata: metadata,
             read_structures: vec![ReadStructure::from_str("17B39T").unwrap()],
             allowed_mismatches: 2,
-            min_delta: 1, //
+            min_delta: 1,
             demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
