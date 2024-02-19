@@ -89,7 +89,7 @@ pub enum SampleSheetError {
     },
 
     #[error(
-        "The min-delta is set at {min_delta}. The hamming distance between {sample_a}:{barcode_a} and {sample_b}:{barcode_b} is {distance}. Because min-delta is greater than the hamming distance between these samples, reads that perfect match the barcodes of these samples will not be assigned to these samples."
+        "The min-delta is set at {min_delta}. The hamming distance between {sample_a}:{barcode_a} and {sample_b}:{barcode_b} is {distance}. Because min-delta is greater than or equal to the hamming distance between these sample barcodes, reads that perfect match these sample barcodes will not be assigned to either of these samples."
     )]
     MinDeltaTooHigh {
         sample_a: String,
