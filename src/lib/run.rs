@@ -502,7 +502,7 @@ mod test {
             sample_metadata: buggy_metadata,
             read_structures,
             allowed_mismatches: 2,
-            min_delta: 1, //
+            min_delta: 1,
             ..Opts::default()
         };
         run(opts).unwrap();
