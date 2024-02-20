@@ -12,6 +12,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::sample_sheet::{ErrorLine, ReasonBarcodeInvalid, SampleSheetError};
 
+use crate::matcher::should_reject_delta;
+
 /// The bases that are allowed in the [`SampleMetadata::barcode`].
 const ALLOWED_BASES: &[u8] = &[b'A', b'C', b'T', b'G'];
 
@@ -240,7 +242,7 @@ impl SampleMetadata {
                 }
 
                 // Ensure that barcode distances are greater than min_delta distance
-                if distance <= min_delta {
+                if should_reject_delta(distance, min_delta) {
                     return Err(SampleSheetError::MinDeltaTooHigh {
                         sample_a: sample.sample_id.clone(),
                         barcode_a: sample.barcode.to_string(),
