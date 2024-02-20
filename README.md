@@ -57,16 +57,16 @@ Install from pre-built binaries on the [Releases page][releases]
 2. Install dependencies. For example, cmake and build-essentials are required for Ubuntu 22.04. Install using commands below.
 
 ```console
-sudo apt-get update 
+sudo apt-get update
 sudo apt-get install build-essential cmake -y
 ```
-Note: cmake for older OS version such as Ubuntu 18.04 is not incompatible.   
+Note: cmake for older OS version such as Ubuntu 18.04 is not incompatible.
 
 3. Clone the repo and build the software:
 
 ```console
 git clone https://github.com/Singular-Genomics/singular-demux.git
-cd singular-demux 
+cd singular-demux
 cargo install --path ../singular-demux --locked
 ```
 
@@ -80,16 +80,28 @@ Contributions are welcome.  See the [Contributing Guidelines](Contributing.md) f
 The input FASTQs _must_ be block compressed (e.g. with [`bgzip`](http://www.htslib.org/doc/bgzip.html)); uncompressed or non-bgzf gzipped input files are not supported as performance would be significantly degraded.
 
 The primary options that affect demultiplexing are `--allowed-mismatches` and `--min-delta`.  Together these specify a) how well a sample barcode in a sequencing read must match an expected barcode and b) how much worse the next best match must be.
-The default options of `--allowed-mismatches 1 --min-delta 2` will only match a set of FASTQ records to an expected barcode if, across all barcode reads, there is at most one mismatch vs. the expected barcode _and_ there are no matches to other expected barcodes with fewer than three mismatches.
+The default options of `--allowed-mismatches 1 --min-delta 2` will only match a set of FASTQ records to an expected barcode if, across all barcode reads, there is at most one mismatch (allowed mismatches) vs. the expected barcode _and_ the difference (minimmum delta) between the number of mismatches of the best and second best matching barcode is greater than two mismatches.
+Note: the allowed mismatches is not used when determining the next-best matching barcode.
+
+For additional examples, consider `--allowed-mismatches 3 --min-delta 1`, with two barcodes `b1` and `b2`:
+
+1. If b1 matches with 2 mismatches, and b2 matches with 3 mismatches, then the delta between the number of mismatches is 1, which _is not_ greater than `--min-delta`, and therefore the read is not assigned to a barcode.
+1. If b1 matches with 1 mismatch, and b2 matches with 3 mismatches, then the delta between the number of mismatches is 2, which _is_ greater than `--min-delta`, and therefore the read is assigned to barcode `b1`.
+1. If b1 matches with 0 mismatch, and b2 matches with 2 mismatches, then the delta between the number of mismatches is 2, which _is_ greater than `--min-delta`, and therefore the read is assigned to barcode `b1`.
+1. If b1 matches with 0 mismatches, and b2 matches with 1 mismatches, then the delta between the number of mismatches is 1, which _is not_ greater than `--min-delta`, and therefore the read is not assigned to a barcode.
+1. If b1 matches with 3 mismatches, and b2 matches with 6 mismatches, then the delta between the number of mismatches is 3, which _is_ greater than `--min-delta`, and the number of mismatches for b1 is less than equal to than `--allowed-mismatches`, and thefore read is assigned to barcode `b1`.
+1. If b1 matches with 4 mismatches, and b2 matches with 6 mismatches, then the delta between the number of mismatches is 2, which _is_ greater than `--min-delta`, but the number of mismatches for b1 is greater than `--allowed-mismatches`, and thefore the read is not assigned to a barcode.
+1. If b1 matches with 2 mismatch, and b2 matches with 2 mismatches, then the delta between the number of mismatches is 0, which _is not_ greater than `--min-delta`, and therefore the read is not assigned to a
+barcode.
 
 Several other options affect how demultiplexing is performed, and for these to be fully understood it is necessary to understand the order in which they are applied in the demultiplexing process.  Operations are ordered as follows:
 
 1. A record is read in from each of the input FASTQ files and broken into read "segments" using the supplied read structures.
-2. If `--filter-control-reads` is specified and the reads are marked as controls in the FASTQ header, the reads are discarded (i.e. they do not get written to _any_ output files).
-3. If `--filter-failing-quality` is specified and the reads are marked as quality failures in the FASTQ header, the reads are discarded (i.e. they do not get written to _any_ output files).
-4. If one or more `--quality-mask-threshold` values are supplied, template bases in all input reads that have base quality below the given threshold value are masked to `N`.
-5. Match the reads against the set of expected barcodes; if the sample barcode has more `N` bases in it that specified by `--max-no-calls` or does not match to an expected barcode within defined parameters, the reads will be assigned to the undetermined sample.
-6. Write out the subset of the FASTQs/read segments specified by `--output-types` to the FASTQ file(s) for the assigned sample.
+1. If `--filter-control-reads` is specified and the reads are marked as controls in the FASTQ header, the reads are discarded (i.e. they do not get written to _any_ output files).
+1. If `--filter-failing-quality` is specified and the reads are marked as quality failures in the FASTQ header, the reads are discarded (i.e. they do not get written to _any_ output files).
+1. If one or more `--quality-mask-threshold` values are supplied, template bases in all input reads that have base quality below the given threshold value are masked to `N`.
+1. Match the reads against the set of expected barcodes; if the sample barcode has more `N` bases in it that specified by `--max-no-calls` or does not match to an expected barcode within defined parameters, the reads will be assigned to the undetermined sample.
+1. Write out the subset of the FASTQs/read segments specified by `--output-types` to the FASTQ file(s) for the assigned sample.
 
 ## Usage
 
@@ -135,7 +147,7 @@ FASTQ files _must_ be BGZF compressed.
 
 Alternatively, the FASTQS can be auto-detected when a path prefix is given to `--fastqs <dir>/<prefix>`.
 The FASTQs must be named `<dir>/<prefix>_L00<lane>_<kind><kind-number>_001.fastq.gz`, where `kind` is
-one of R (read/template), I (index/sample barcode), or U (umi/molecular barcode). 
+one of R (read/template), I (index/sample barcode), or U (umi/molecular barcode).
 
 The Read Structure will be derived from file names (kind and kind number), with the full read length used for the given kind.
 The derived Read Structure and FASTQs will be ordered first by `kind` (I then R then U), second by
@@ -182,7 +194,7 @@ Read Structures are short strings that describe the origin and/or purpose of bas
 4. **S** identifies a set of bases to be skipped or ignored
 
 The last `<number><operator>` pair in a Read Structure may use `+` instead of a number to denote "all remaining bases".
-This is useful if, e.g., FASTQs have been trimmed and/or contain reads of varying length. 
+This is useful if, e.g., FASTQs have been trimmed and/or contain reads of varying length.
 
 For more details on Read Structures, and how to validate them, see [this detailed description](https://github.com/fulcrumgenomics/fgbio/wiki/Read-Structures).
 
@@ -203,14 +215,14 @@ The sample metadata file may be a Sample Sheet or a simple two-column CSV file w
 
 ##### Sample Sheet
 
-Information about the sample(s) to demultiplex is specified within a Sample Sheet. 
+Information about the sample(s) to demultiplex is specified within a Sample Sheet.
 Command line options for demultiplexing may also be passed via the Sample Sheet.
 
 The Sample Sheet may have a `[Demux]` section for command line options, and must have a `[Data]`
-section for sample information.  
+section for sample information.
 
 The `[Demux]` section must contain a line per command line option.
-The first column must contain the option long name _without_ the leading `--` (e.g. `fastqs` or 
+The first column must contain the option long name _without_ the leading `--` (e.g. `fastqs` or
 `read-structures`).
 The second column contains the option value, or empty if the option takes no value (i.e. a flag).
 If the option accepts multiple values, they must be space separated in the second column.
@@ -220,7 +232,7 @@ The order of the FASTQs must match the order read structures.
 The `[Data]` section must contain a header line.
 The `Sample_ID` column must contain a unique, non-empty identifier
 for each sample.  One or both of `Index1_Sequence` and `Index2_Sequence` must be present with values for
-indexed runs.  For non-indexed runs, a single sample must be given with an empty value for both the 
+indexed runs.  For non-indexed runs, a single sample must be given with an empty value for both the
 `Index1_Sequence` and `Index2_Sequence` columns.
 Both `Sample_ID`s and the `Index1_Sequence`/`Index2_Sequence` combinations must be unique within the file, and both columns are required for all samples.
 
@@ -234,7 +246,7 @@ read-structures,+B +T
 Sample_ID,Index1_Sequence,Index2_Sequence
 s1,ACTGGTCA,
 s2,ATACGAAC,
-``` 
+```
 
 ##### Simple Two-column CSV
 
@@ -248,7 +260,7 @@ An example follows:
 Sample_ID,Sample_Barcode
 s1,ACTGGTCA
 s2,ATACGAAC
-``` 
+```
 
 For example if a dual-indexing run was performed with an additional inline sample barcode in read 1, and `sgdemux` was invoked with the following options:
 
@@ -349,7 +361,7 @@ The `per_project_metrics.tsv` file aggregates the metrics by project (aggregates
 samples with the same project) and has the same columns as [per_sample_metrics.tsv](#per_sample_metricstsv).
 In this case, `barcode_name` and `library_name` will contain the project name (or `None` if no
 project is given).
-THe `barcode` will contain all `N`s. 
+THe `barcode` will contain all `N`s.
 The undetermined sample will not be aggregated with any other sample.
 
 ##### `metrics.tsv`
