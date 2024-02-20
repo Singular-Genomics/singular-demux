@@ -850,7 +850,7 @@ mod test {
             sample_metadata: metadata,
             read_structures,
             allowed_mismatches: 2,
-            min_delta: 1, //
+            min_delta: 1,
             demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
