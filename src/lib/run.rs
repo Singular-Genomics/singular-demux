@@ -365,7 +365,7 @@ mod test {
             filename,
             test_commons::{
                 create_preset_sample_metadata_file, slurp_fastq, write_reads_to_file, Fq,
-                SAMPLE_BARCODE_1, SAMPLE_BARCODE_4,
+                SAMPLE_BARCODE_1,
             },
             INPUT_FASTQ_SUFFIX,
         },
@@ -558,9 +558,9 @@ mod test {
             }
             .to_owned_record(),
             Fq {
-                name: "frag4", // matches the third and fourth sample with 1 mismatch, delta too small -> unmatched
+                name: "frag4", // matches the third and fourth sample with 2 and 1 mismatches, respectively, delta too small -> unmatched
                 comment: Some("4:Y:0:SampleNumber"),
-                bases: &[b"GGGGGGTGGATTACAGA".as_slice(), &[b'A'; 100]].concat(),
+                bases: &[b"GGGGGGTCGATTACAGA".as_slice(), &[b'A'; 100]].concat(),
                 ..Fq::default()
             }
             .to_owned_record(),
@@ -641,7 +641,7 @@ mod test {
                     assert!(names.contains(&b"frag4".to_vec()));
                     assert!(names.contains(&b"frag5".to_vec()));
                     assert!(barcodes.contains(&b"AAAAAAAAGATTACTTT".to_vec()));
-                    assert!(barcodes.contains(&b"GGGGGGTGGATTACAGA".to_vec()));
+                    assert!(barcodes.contains(&b"GGGGGGTCGATTACAGA".to_vec()));
                     assert!(barcodes.contains(&b"AAAAAAAAGANNNNNNN".to_vec()));
                 } else {
                     assert!(records.is_empty());
@@ -735,8 +735,7 @@ mod test {
                 name: "4", // matches the fourth sample perfectly and 3rd barcode with two mismatches, delta too small -> unmatched
                 // matches the third and fourth sample with one mismatches, delta too small -> unmatched
                 comment: Some("4:N:0:SampleNumber"),
-                // bases: &[SAMPLE_BARCODE_4, &[b'A'; 100]].concat(),
-                bases: &[b"GGGGGGTGGATTACAGA".as_slice(), &[b'A'; 100]].concat(),
+                bases: &[b"GGGGGGTCGATTACAGA".as_slice(), &[b'A'; 100]].concat(),
                 ..Fq::default()
             }
             .to_owned_record(),
@@ -759,11 +758,11 @@ mod test {
             vec![], // sample3
             vec![], // sample4
             if omit_control_reads {
-                vec![b"GGGGGGTGGATTACAGA".as_slice(), b"AAAAAAAAGANNNNNNN".as_slice()]
+                vec![b"GGGGGGTCGATTACAGA".as_slice(), b"AAAAAAAAGANNNNNNN".as_slice()]
             } else {
                 vec![
                     b"AAAAAAAAGATTACTTT".as_slice(),
-                    b"GGGGGGTGGATTACAGA".as_slice(),
+                    b"GGGGGGTCGATTACAGA".as_slice(),
                     b"AAAAAAAAGANNNNNNN".as_slice(),
                 ]
             }, // undetermined
