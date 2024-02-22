@@ -585,10 +585,25 @@ mod tests {
             ..Opts::default()
         };
 
-        assert_matches!(
-            SampleSheet::from_path(opts),
-            Err(SampleSheetError::MinDeltaTooHigh { .. })
-        );
+        // Destructure and check fields
+        if let SampleSheetError::MinDeltaTooHigh {
+            sample_a,
+            barcode_a,
+            sample_b,
+            barcode_b,
+            distance,
+            min_delta,
+        } = SampleSheet::from_path(opts).unwrap_err()
+        {
+            assert_eq!(sample_a, String::from("Sample4"));
+            assert_eq!(barcode_a, String::from("GGGG"));
+            assert_eq!(sample_b, String::from("Sample5"));
+            assert_eq!(barcode_b, String::from("GTGC"));
+            assert_eq!(distance, 2);
+            assert_eq!(min_delta, 2);
+        } else {
+            panic!("Wrong error returned");
+        }
     }
 
     #[test]
