@@ -262,7 +262,8 @@ impl<'a> PreComputeMatcher<'a> {
 }
 
 #[inline]
-fn should_reject_delta(delta: usize, min_delta: usize) -> bool {
+
+pub fn should_reject_delta(delta: usize, min_delta: usize) -> bool {
     // Delta is the difference best distance and next best distance.
     // Accept delta > min_delta and reject delta <=  min_delta
     delta <= min_delta

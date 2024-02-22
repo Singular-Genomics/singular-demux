@@ -12,6 +12,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::sample_sheet::{ErrorLine, ReasonBarcodeInvalid, SampleSheetError};
 
+use crate::matcher::should_reject_delta;
+
 /// The bases that are allowed in the [`SampleMetadata::barcode`].
 const ALLOWED_BASES: &[u8] = &[b'A', b'C', b'T', b'G'];
 
@@ -201,15 +203,17 @@ impl SampleMetadata {
     }
 
     /// Validate a collection of [`SampleMetadata`] barcodes by checking that all sample barcodes
-    /// are >= `min_mismatches` away from each other by hamming distance.
+    /// are >= `min_mismatches` and > `min_delta` away from each other by hamming distance.
     ///
     /// # Errors
     ///
-    /// - [`SampleSheetError::BarcodeCollision`] if two barcodes are with the allowed distance
+    /// - [`SampleSheetError::BarcodeCollision`] if two barcodes are with the allowed mismatch distance
+    /// - [`SampleSheetError::MinDeltaTooHigh`] if two barcodes are within the allowed min-delta distance
     /// - [`SampleSheetError::UnequalBarcodeLengths`] if two barcodes have unequal length
     pub fn validate_barcode_pairs(
         samples: &[Self],
         min_mismatches: usize,
+        min_delta: usize,
     ) -> Result<(), SampleSheetError> {
         for (i, sample) in samples.iter().enumerate() {
             let barcode = &sample.barcode;
@@ -234,6 +238,18 @@ impl SampleMetadata {
                         sample_b: other.sample_id.clone(),
                         barcode_b: other.barcode.to_string(),
                         distance,
+                    });
+                }
+
+                // Ensure that barcode distances are greater than min_delta distance
+                if should_reject_delta(distance, min_delta) {
+                    return Err(SampleSheetError::MinDeltaTooHigh {
+                        sample_a: sample.sample_id.clone(),
+                        barcode_a: sample.barcode.to_string(),
+                        sample_b: other.sample_id.clone(),
+                        barcode_b: other.barcode.to_string(),
+                        distance,
+                        min_delta,
                     });
                 }
             }
@@ -278,6 +294,7 @@ impl AsRef<SampleMetadata> for SampleMetadata {
 pub fn validate_samples(
     mut samples: Vec<SampleMetadata>,
     min_mismatch: Option<usize>,
+    min_delta: usize,
     undetermined_name: &str,
     lanes: &[usize],
 ) -> Result<Vec<SampleMetadata>, SampleSheetError> {
@@ -319,7 +336,7 @@ pub fn validate_samples(
         }
 
         if let Some(min_mismatch) = min_mismatch {
-            SampleMetadata::validate_barcode_pairs(&samples, min_mismatch)?;
+            SampleMetadata::validate_barcode_pairs(&samples, min_mismatch, min_delta)?;
         }
 
         // If we have more than one sample, or we have one sample with an actual barcode
@@ -545,6 +562,48 @@ mod tests {
             SampleSheet::from_path(opts),
             Err(SampleSheetError::BarcodeCollision { .. })
         );
+    }
+
+    #[test]
+    fn test_min_delta_too_high() {
+        let tempdir = tempdir().unwrap();
+        let input_path = tempdir.path().join("input.csv");
+        let samples = vec![
+            SampleMetadata::new(String::from("Sample1"), BString::from("AAAA"), 0, 2).unwrap(),
+            SampleMetadata::new(String::from("Sample2"), BString::from("TTTT"), 1, 3).unwrap(),
+            SampleMetadata::new(String::from("Sample3"), BString::from("CCCC"), 2, 4).unwrap(),
+            SampleMetadata::new(String::from("Sample4"), BString::from("GGGG"), 3, 5).unwrap(),
+            SampleMetadata::new(String::from("Sample5"), BString::from("GTGC"), 4, 6).unwrap(),
+        ];
+
+        to_path(&input_path, samples.iter()).unwrap();
+
+        let opts = Opts {
+            sample_metadata: input_path,
+            allowed_mismatches: 1,
+            min_delta: 2,
+            ..Opts::default()
+        };
+
+        // Destructure and check fields
+        if let SampleSheetError::MinDeltaTooHigh {
+            sample_a,
+            barcode_a,
+            sample_b,
+            barcode_b,
+            distance,
+            min_delta,
+        } = SampleSheet::from_path(opts).unwrap_err()
+        {
+            assert_eq!(sample_a, String::from("Sample4"));
+            assert_eq!(barcode_a, String::from("GGGG"));
+            assert_eq!(sample_b, String::from("Sample5"));
+            assert_eq!(barcode_b, String::from("GTGC"));
+            assert_eq!(distance, 2);
+            assert_eq!(min_delta, 2);
+        } else {
+            panic!("Wrong error returned");
+        }
     }
 
     #[test]

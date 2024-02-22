@@ -88,6 +88,18 @@ pub enum SampleSheetError {
         distance: usize,
     },
 
+    #[error(
+        "The min-delta is set at {min_delta}. The hamming distance between {sample_a}:{barcode_a} and {sample_b}:{barcode_b} is {distance}. Because min-delta is greater than or equal to the hamming distance between these sample barcodes, reads that perfect match these sample barcodes will not be assigned to either of these samples."
+    )]
+    MinDeltaTooHigh {
+        sample_a: String,
+        barcode_a: String,
+        sample_b: String,
+        barcode_b: String,
+        distance: usize,
+        min_delta: usize,
+    },
+
     #[error("Duplicate Sample_ID found: {id}")]
     DuplicateSampleId { id: String },
 
@@ -240,6 +252,7 @@ impl SampleSheet {
         let samples = validate_samples(
             samples,
             Some(opts.allowed_mismatches),
+            opts.min_delta,
             &opts.undetermined_sample_name,
             &opts.lane,
         )?;
@@ -430,6 +443,7 @@ impl SampleSheet {
         let samples = validate_samples(
             samples,
             Some(opts.allowed_mismatches),
+            opts.min_delta,
             &opts.undetermined_sample_name,
             &opts.lane,
         )?;
@@ -762,9 +776,9 @@ mod test {
             read-structures,8B +T\n\
             [Data]\n\
             Sample_ID,Index1_Name,Index1_Sequence,Index2_Name,Index2_SequenceLane,Lane,Lane_Name,Project,Loading_Concentration,Application,Notes,Reference\n\
-            S1,I1,AAAA,I2,CCCC,1,Lane1,S1_Project,,,,\n\
-            S2,I1,GGGG,I2,TTTT,1,Lane1,S2_Project,,,,\n\
-            S3,I1,ATTA,I2,GCCG,1,Lane1,S3_Project,,,,\n\
+            S1,I1,AAAACCCC,I2,CCCC,1,Lane1,S1_Project,,,,\n\
+            S2,I1,GGGGTTTT,I2,TTTT,1,Lane1,S2_Project,,,,\n\
+            S3,I1,ATTAGCCG,I2,GCCG,1,Lane1,S3_Project,,,,\n\
             ".to_string();
 
         let dir = tempfile::tempdir().unwrap();

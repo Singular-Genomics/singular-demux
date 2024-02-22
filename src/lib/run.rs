@@ -365,7 +365,7 @@ mod test {
             filename,
             test_commons::{
                 create_preset_sample_metadata_file, slurp_fastq, write_reads_to_file, Fq,
-                SAMPLE_BARCODE_1, SAMPLE_BARCODE_4,
+                SAMPLE_BARCODE_1,
             },
             INPUT_FASTQ_SUFFIX,
         },
@@ -409,7 +409,7 @@ mod test {
             sample_metadata: metadata.clone(),
             read_structures: vec![read_structure],
             allowed_mismatches: 2,
-            min_delta: 3,
+            min_delta: 1,
             demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
@@ -472,7 +472,7 @@ mod test {
             sample_metadata: metadata,
             read_structures,
             allowed_mismatches: 2,
-            min_delta: 3,
+            min_delta: 1,
             ..Opts::default()
         };
         run(opts).unwrap();
@@ -502,7 +502,7 @@ mod test {
             sample_metadata: buggy_metadata,
             read_structures,
             allowed_mismatches: 2,
-            min_delta: 3,
+            min_delta: 1,
             ..Opts::default()
         };
         run(opts).unwrap();
@@ -558,9 +558,9 @@ mod test {
             }
             .to_owned_record(),
             Fq {
-                name: "frag4", // matches the fourth sample perfectly and 3rd barcode with two mismathces, delta too small -> unmatched
+                name: "frag4", // matches the third and fourth sample with 2 and 1 mismatches, respectively, delta too small -> unmatched
                 comment: Some("4:Y:0:SampleNumber"),
-                bases: &[SAMPLE_BARCODE_4, &[b'A'; 100]].concat(),
+                bases: &[b"GGGGGGTCGATTACAGA".as_slice(), &[b'A'; 100]].concat(),
                 ..Fq::default()
             }
             .to_owned_record(),
@@ -609,7 +609,7 @@ mod test {
             sample_metadata: metadata,
             read_structures: vec![read_structure],
             allowed_mismatches: 2,
-            min_delta: 3,
+            min_delta: 1,
             demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
@@ -641,7 +641,7 @@ mod test {
                     assert!(names.contains(&b"frag4".to_vec()));
                     assert!(names.contains(&b"frag5".to_vec()));
                     assert!(barcodes.contains(&b"AAAAAAAAGATTACTTT".to_vec()));
-                    assert!(barcodes.contains(&b"GGGGGGTTGATTACAGA".to_vec()));
+                    assert!(barcodes.contains(&b"GGGGGGTCGATTACAGA".to_vec()));
                     assert!(barcodes.contains(&b"AAAAAAAAGANNNNNNN".to_vec()));
                 } else {
                     assert!(records.is_empty());
@@ -733,8 +733,9 @@ mod test {
             .to_owned_record(),
             Fq {
                 name: "4", // matches the fourth sample perfectly and 3rd barcode with two mismatches, delta too small -> unmatched
+                // matches the third and fourth sample with one mismatches, delta too small -> unmatched
                 comment: Some("4:N:0:SampleNumber"),
-                bases: &[SAMPLE_BARCODE_4, &[b'A'; 100]].concat(),
+                bases: &[b"GGGGGGTCGATTACAGA".as_slice(), &[b'A'; 100]].concat(),
                 ..Fq::default()
             }
             .to_owned_record(),
@@ -757,11 +758,11 @@ mod test {
             vec![], // sample3
             vec![], // sample4
             if omit_control_reads {
-                vec![SAMPLE_BARCODE_4, b"AAAAAAAAGANNNNNNN".as_slice()]
+                vec![b"GGGGGGTCGATTACAGA".as_slice(), b"AAAAAAAAGANNNNNNN".as_slice()]
             } else {
                 vec![
                     b"AAAAAAAAGATTACTTT".as_slice(),
-                    SAMPLE_BARCODE_4,
+                    b"GGGGGGTCGATTACAGA".as_slice(),
                     b"AAAAAAAAGANNNNNNN".as_slice(),
                 ]
             }, // undetermined
@@ -785,7 +786,7 @@ mod test {
             sample_metadata: metadata,
             read_structures,
             allowed_mismatches: 2,
-            min_delta: 3,
+            min_delta: 1,
             demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
@@ -848,7 +849,7 @@ mod test {
             sample_metadata: metadata,
             read_structures,
             allowed_mismatches: 2,
-            min_delta: 3,
+            min_delta: 1,
             demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
@@ -901,7 +902,7 @@ mod test {
             sample_metadata: metadata,
             read_structures,
             allowed_mismatches: 2,
-            min_delta: 3,
+            min_delta: 1,
             demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
@@ -975,7 +976,7 @@ mod test {
             sample_metadata: metadata,
             read_structures,
             allowed_mismatches: 2,
-            min_delta: 3,
+            min_delta: 1,
             demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
@@ -1099,7 +1100,7 @@ mod test {
             sample_metadata: metadata,
             read_structures: vec![ReadStructure::from_str("17B39T").unwrap()],
             allowed_mismatches: 2,
-            min_delta: 3,
+            min_delta: 1,
             demux_threads: threads,
             compressor_threads: threads,
             writer_threads: threads,
@@ -1212,7 +1213,7 @@ mod test {
             sample_metadata: metadata_path.clone(),
             read_structures: vec![read_structure],
             allowed_mismatches: 1,
-            min_delta: 2,
+            min_delta: 1,
             demux_threads: 2,
             compressor_threads: 2,
             writer_threads: 2,
