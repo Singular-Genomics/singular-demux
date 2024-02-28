@@ -340,7 +340,7 @@ This file always produced and contains the following columns:
 |------|-----------|
 |`sample_ID`|The name for the sample barcode, typically the same name from the SampleSheet.|
 |`barcode`|The sample barcode bases. Dual index barcodes will have two sample barcode sequences delimited by a `+`.|
-|`templates`|The total number of templates matching the given barcode.|
+|`total_matches`|The total number of templates matching the given barcode.|
 |`perfect_matches`|The number of templates that match perfectly the given barcode.|
 |`one_mismatch_matches`|The number of pass-filter templates that match the given barcode with exactly one mismatch.|
 |`q20_bases`|The number of bases in a template with a quality score 20 or above.|

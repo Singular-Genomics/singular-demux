@@ -664,15 +664,15 @@ mod test {
             assert_eq!(metric.barcode, *sample.barcode.to_string());
 
             if metric.sample_id == sample_sheet.samples[0].sample_id {
-                assert_eq!(metric.templates, 2);
+                assert_eq!(metric.total_matches, 2);
                 assert_eq!(metric.perfect_matches, 1);
                 assert_eq!(metric.one_mismatch_matches, 1);
             } else if metric.sample_id == sample_sheet.samples[4].sample_id {
-                assert_eq!(metric.templates, 3);
+                assert_eq!(metric.total_matches, 3);
                 assert_eq!(metric.perfect_matches, 0);
                 assert_eq!(metric.one_mismatch_matches, 0);
             } else {
-                assert_eq!(metric.templates, 0);
+                assert_eq!(metric.total_matches, 0);
                 assert_eq!(metric.perfect_matches, 0);
                 assert_eq!(metric.one_mismatch_matches, 0);
             }
@@ -1030,15 +1030,15 @@ mod test {
             assert_eq!(metric.barcode, *sample.barcode.to_string());
 
             if metric.sample_id == sample_sheet.samples[0].sample_id {
-                assert_eq!(metric.templates, 1);
+                assert_eq!(metric.total_matches, 1);
                 assert_eq!(metric.perfect_matches, 1);
                 assert_eq!(metric.one_mismatch_matches, 0);
             } else if metric.sample_id == sample_sheet.samples[4].sample_id {
-                assert_eq!(metric.templates, 0);
+                assert_eq!(metric.total_matches, 0);
                 assert_eq!(metric.perfect_matches, 0);
                 assert_eq!(metric.one_mismatch_matches, 0);
             } else {
-                assert_eq!(metric.templates, 0);
+                assert_eq!(metric.total_matches, 0);
                 assert_eq!(metric.perfect_matches, 0);
                 assert_eq!(metric.one_mismatch_matches, 0);
             }
@@ -1147,7 +1147,7 @@ mod test {
             assert_eq!(metric.barcode, *sample.barcode.to_string());
 
             if metric.sample_id == sample_sheet.samples[0].sample_id {
-                assert_eq!(metric.templates, templates);
+                assert_eq!(metric.total_matches, templates);
                 assert_eq!(metric.perfect_matches, templates);
                 assert_eq!(metric.one_mismatch_matches, 0);
                 assert_eq!(metric.total_number_of_bases, total_num_bases);
@@ -1156,7 +1156,7 @@ mod test {
                 assert_eq!(metric.frac_q20_bases, q20_above as f64 / total_num_bases as f64);
                 assert_eq!(metric.frac_q30_bases, q30_above as f64 / total_num_bases as f64);
             } else {
-                assert_eq!(metric.templates, 0);
+                assert_eq!(metric.total_matches, 0);
                 assert_eq!(metric.perfect_matches, 0);
                 assert_eq!(metric.one_mismatch_matches, 0);
                 assert_eq!(metric.total_number_of_bases, 0);
@@ -1517,15 +1517,15 @@ s2,CCC,GGG"#;
 
         assert_eq!(per_sample_metrics[0].sample_id, "s1");
         assert_eq!(per_sample_metrics[0].barcode, "TTT+AAA");
-        assert_eq!(per_sample_metrics[0].templates, 1);
+        assert_eq!(per_sample_metrics[0].total_matches, 1);
 
         assert_eq!(per_sample_metrics[1].sample_id, "s2");
         assert_eq!(per_sample_metrics[1].barcode, "CCC+GGG");
-        assert_eq!(per_sample_metrics[1].templates, 0);
+        assert_eq!(per_sample_metrics[1].total_matches, 0);
 
         assert_eq!(per_sample_metrics[2].sample_id, "Undetermined");
         assert_eq!(per_sample_metrics[2].barcode, "NNNNNN");
-        assert_eq!(per_sample_metrics[2].templates, 0);
+        assert_eq!(per_sample_metrics[2].total_matches, 0);
 
         // Check unmatched batcode metrics, should be empty
         let unmatched_metrics = output.join("most_frequent_unmatched.tsv");
@@ -1586,11 +1586,11 @@ s1,CCC,"#;
 
         assert_eq!(per_sample_metrics[0].sample_id, "s1");
         assert_eq!(per_sample_metrics[0].barcode, "CCC");
-        assert_eq!(per_sample_metrics[0].templates, 0);
+        assert_eq!(per_sample_metrics[0].total_matches, 0);
 
         assert_eq!(per_sample_metrics[1].sample_id, "Undetermined");
         assert_eq!(per_sample_metrics[1].barcode, "NNN");
-        assert_eq!(per_sample_metrics[1].templates, 1);
+        assert_eq!(per_sample_metrics[1].total_matches, 1);
 
         // Check unmatched batcode metrics, should be empty
         let unmatched_metrics = output.join("most_frequent_unmatched.tsv");
