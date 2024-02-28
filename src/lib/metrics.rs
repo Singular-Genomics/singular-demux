@@ -446,7 +446,7 @@ impl DemuxedGroupSampleMetrics {
         SampleMetricsProcessed {
             sample_id: sample_metadata.sample_id.clone(),
             barcode: sample_metadata.get_semantic_barcode().to_string(),
-            templates: self.total_matches,
+            total_matches: self.total_matches,
             perfect_matches: self.perfect_matches,
             one_mismatch_matches: self.one_mismatch_matches,
             q20_bases: self.base_qual_counter.q20_bases,
@@ -702,7 +702,7 @@ pub struct SampleMetricsProcessed {
     /// The sample barcode bases. Dual index barcodes will have two sample barcode sequences delimited by a `+`.
     pub(crate) barcode: String,
     /// The total number of templates matching the given barcode.
-    pub(crate) templates: usize,
+    pub(crate) total_matches: usize,
     /// The number of templates that match perfectly the given barcode.
     pub(crate) perfect_matches: usize,
     /// The number of pass-filter templates that match the given barcode with exactly one mismatch.
@@ -731,18 +731,16 @@ pub struct SampleMetricsProcessed {
 
 #[cfg(test)]
 mod test {
-    use csv;
     use super::*;
+    use csv;
 
     // Double check that serde does the right thing to rename cols.
     #[test]
     fn test_sample_metrics_col_rename() {
         // Serialize
         let metrics = SampleMetricsProcessed::default();
-        let mut writer = csv::WriterBuilder::new()
-            .has_headers(true)
-            .delimiter(b'\t')
-            .from_writer(vec![]);
+        let mut writer =
+            csv::WriterBuilder::new().has_headers(true).delimiter(b'\t').from_writer(vec![]);
         writer.serialize(&metrics).unwrap();
 
         // Parse the header
