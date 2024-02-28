@@ -171,6 +171,29 @@ impl SampleMetadata {
         Ok(self)
     }
 
+    /// Returns a "semantic" stringified barcode where its read structure is explcitly delimited and
+    /// readable.
+    /// - For dual index barcodes where `self.index1` and `self.index2` are both
+    ///    `Some`, this returns the barcodes concatenated and delimited with `+`
+    /// - Otherwise, returns `self.raw_barcode` if it is not `None`
+    /// - Else, returns `self.barcode`
+    ///
+    /// **Note**: this expects that `self` is a valid SampleMetdata struct. i.e., a after
+    /// an update and sanitization with `update_with_and_set_demux_barcode()`, or is a sentinal
+    /// value where the barcode is all Ns.
+    pub fn get_semantic_barcode(&self) -> BString {
+        if let (Some(index1), Some(index2)) = (self.index1.clone(), self.index2.clone()) {
+            // Use + delimited dual index barcode if it is present
+            BString::from(format!("{}+{}", index1, index2))
+        } else if let Some(raw_barcode) = self.raw_barcode.as_ref() {
+            // Otherwise use raw barcode if present
+            raw_barcode.clone()
+        } else {
+            // Else use sanitized barcode
+            self.barcode.clone()
+        }
+    }
+
     /// Run a set of validations on a barcode to ensure that it is well formed.
     ///
     /// # Errors
@@ -787,5 +810,52 @@ Sample2,GGGG
             new_sample_meta(String::from("Sample2"), BString::from("GGGG"), 2, 4, 2).unwrap(),
         ];
         assert_eq!(actual, expected);
+    }
+    #[test]
+    fn test_get_semantic_barcode() {
+        // bootstrap csv+serde deserialization to create SampleMetadata structs
+        // Dual index
+        let header =
+            csv::StringRecord::from(vec!["Sample_ID", "Index1_Sequence", "Index2_Sequence"]);
+        let record = csv::StringRecord::from(vec!["S1", "AAAA", "CCCC"]);
+        let mut sample: SampleMetadata = record.deserialize(Some(&header)).unwrap();
+        sample = sample.update_with_and_set_demux_barcode(0, 0).unwrap();
+
+        let metrics_barcode = sample.get_semantic_barcode();
+        assert_eq!(metrics_barcode, BString::from("AAAA+CCCC"));
+
+        // Index1 only
+        let record = csv::StringRecord::from(vec!["S1", "AAAA", ""]);
+        let mut sample: SampleMetadata = record.deserialize(Some(&header)).unwrap();
+        sample = sample.update_with_and_set_demux_barcode(0, 0).unwrap();
+
+        let metrics_barcode = sample.get_semantic_barcode().to_string();
+        assert_eq!(metrics_barcode, BString::from("AAAA"));
+
+        // Index2 only
+        let record = csv::StringRecord::from(vec!["S1", "", "CCCC"]);
+        let mut sample: SampleMetadata = record.deserialize(Some(&header)).unwrap();
+        sample = sample.update_with_and_set_demux_barcode(0, 0).unwrap();
+
+        let metrics_barcode: String = sample.get_semantic_barcode().to_string();
+        assert_eq!(metrics_barcode, BString::from("CCCC"));
+
+        // Two column format
+        // single barcode
+        let header = csv::StringRecord::from(vec!["Sample_ID", "Sample_Barcode"]);
+        let record = csv::StringRecord::from(vec!["S1", "ACGT"]);
+        let mut sample: SampleMetadata = record.deserialize(Some(&header)).unwrap();
+        sample = sample.update_with_and_set_demux_barcode(0, 0).unwrap();
+
+        let metrics_barcode = sample.get_semantic_barcode();
+        assert_eq!(metrics_barcode, BString::from("ACGT"));
+
+        // Any barcode! (there's no validation and this test reflects this)
+        let record = csv::StringRecord::from(vec!["S1", "AAAA+-!=CCCC"]);
+        let mut sample: SampleMetadata = record.deserialize(Some(&header)).unwrap();
+        sample = sample.update_with_and_set_demux_barcode(0, 0).unwrap();
+
+        let metrics_barcode = sample.get_semantic_barcode();
+        assert_eq!(metrics_barcode, BString::from("AAAA+-!=CCCC"));
     }
 }
