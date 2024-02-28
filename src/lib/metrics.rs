@@ -439,7 +439,7 @@ impl DemuxedGroupSampleMetrics {
         SampleMetricsProcessed {
             barcode_name: sample_metadata.sample_id.clone(),
             library_name: sample_metadata.sample_id.clone(),
-            barcode: sample_metadata.barcode.to_string(),
+            barcode: sample_metadata.get_semantic_barcode().to_string(),
             templates: self.total_matches,
             perfect_matches: self.perfect_matches,
             one_mismatch_matches: self.one_mismatch_matches,
