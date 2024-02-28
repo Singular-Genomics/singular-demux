@@ -445,7 +445,6 @@ impl DemuxedGroupSampleMetrics {
     ) -> SampleMetricsProcessed {
         SampleMetricsProcessed {
             barcode_name: sample_metadata.sample_id.clone(),
-            library_name: sample_metadata.sample_id.clone(),
             barcode: sample_metadata.get_semantic_barcode().to_string(),
             templates: self.total_matches,
             perfect_matches: self.perfect_matches,
@@ -698,8 +697,6 @@ impl BarcodeCount {
 pub struct SampleMetricsProcessed {
     /// The name for the sample barcode, typically the same name from the SampleSheet.
     pub(crate) barcode_name: String,
-    /// The name of the library, typically the library identifier from the SampleSheet.
-    pub(crate) library_name: String,
     /// The sample barcode bases. Dual index barcodes will have two sample barcode sequences delimited by a `+`.
     pub(crate) barcode: String,
     /// The total number of templates matching the given barcode.

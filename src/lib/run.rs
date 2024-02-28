@@ -662,7 +662,6 @@ mod test {
         for (metric, sample) in per_sample_metrics.into_iter().zip(sample_sheet.samples.iter()) {
             assert_eq!(metric.barcode_name, *sample.sample_id);
             assert_eq!(metric.barcode, *sample.barcode.to_string());
-            assert_eq!(metric.library_name, *sample.sample_id);
 
             if metric.barcode_name == sample_sheet.samples[0].sample_id {
                 assert_eq!(metric.templates, 2);
@@ -1029,7 +1028,6 @@ mod test {
         for (metric, sample) in per_sample_metrics.into_iter().zip(sample_sheet.samples.iter()) {
             assert_eq!(metric.barcode_name, *sample.sample_id);
             assert_eq!(metric.barcode, *sample.barcode.to_string());
-            assert_eq!(metric.library_name, *sample.sample_id);
 
             if metric.barcode_name == sample_sheet.samples[0].sample_id {
                 assert_eq!(metric.templates, 1);
@@ -1147,7 +1145,6 @@ mod test {
         for (metric, sample) in per_sample_metrics.into_iter().zip(sample_sheet.samples.iter()) {
             assert_eq!(metric.barcode_name, *sample.sample_id);
             assert_eq!(metric.barcode, *sample.barcode.to_string());
-            assert_eq!(metric.library_name, *sample.sample_id);
 
             if metric.barcode_name == sample_sheet.samples[0].sample_id {
                 assert_eq!(metric.templates, templates);
