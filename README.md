@@ -338,7 +338,7 @@ This file always produced and contains the following columns:
 
 |Column|Description|
 |------|-----------|
-|`barcode_name`|The name for the sample barcode, typically the same name from the SampleSheet.|
+|`sample_ID`|The name for the sample barcode, typically the same name from the SampleSheet.|
 |`barcode`|The sample barcode bases. Dual index barcodes will have two sample barcode sequences delimited by a `+`.|
 |`templates`|The total number of templates matching the given barcode.|
 |`perfect_matches`|The number of templates that match perfectly the given barcode.|

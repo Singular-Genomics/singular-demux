@@ -660,14 +660,14 @@ mod test {
         assert_eq!(per_sample_metrics.len(), 5);
 
         for (metric, sample) in per_sample_metrics.into_iter().zip(sample_sheet.samples.iter()) {
-            assert_eq!(metric.barcode_name, *sample.sample_id);
+            assert_eq!(metric.sample_id, *sample.sample_id);
             assert_eq!(metric.barcode, *sample.barcode.to_string());
 
-            if metric.barcode_name == sample_sheet.samples[0].sample_id {
+            if metric.sample_id == sample_sheet.samples[0].sample_id {
                 assert_eq!(metric.templates, 2);
                 assert_eq!(metric.perfect_matches, 1);
                 assert_eq!(metric.one_mismatch_matches, 1);
-            } else if metric.barcode_name == sample_sheet.samples[4].sample_id {
+            } else if metric.sample_id == sample_sheet.samples[4].sample_id {
                 assert_eq!(metric.templates, 3);
                 assert_eq!(metric.perfect_matches, 0);
                 assert_eq!(metric.one_mismatch_matches, 0);
@@ -1026,14 +1026,14 @@ mod test {
             delim.read_tsv(&per_sample_metrics).unwrap();
         assert_eq!(per_sample_metrics.len(), 5);
         for (metric, sample) in per_sample_metrics.into_iter().zip(sample_sheet.samples.iter()) {
-            assert_eq!(metric.barcode_name, *sample.sample_id);
+            assert_eq!(metric.sample_id, *sample.sample_id);
             assert_eq!(metric.barcode, *sample.barcode.to_string());
 
-            if metric.barcode_name == sample_sheet.samples[0].sample_id {
+            if metric.sample_id == sample_sheet.samples[0].sample_id {
                 assert_eq!(metric.templates, 1);
                 assert_eq!(metric.perfect_matches, 1);
                 assert_eq!(metric.one_mismatch_matches, 0);
-            } else if metric.barcode_name == sample_sheet.samples[4].sample_id {
+            } else if metric.sample_id == sample_sheet.samples[4].sample_id {
                 assert_eq!(metric.templates, 0);
                 assert_eq!(metric.perfect_matches, 0);
                 assert_eq!(metric.one_mismatch_matches, 0);
@@ -1143,10 +1143,10 @@ mod test {
         assert_eq!(per_sample_metrics.len(), 5);
 
         for (metric, sample) in per_sample_metrics.into_iter().zip(sample_sheet.samples.iter()) {
-            assert_eq!(metric.barcode_name, *sample.sample_id);
+            assert_eq!(metric.sample_id, *sample.sample_id);
             assert_eq!(metric.barcode, *sample.barcode.to_string());
 
-            if metric.barcode_name == sample_sheet.samples[0].sample_id {
+            if metric.sample_id == sample_sheet.samples[0].sample_id {
                 assert_eq!(metric.templates, templates);
                 assert_eq!(metric.perfect_matches, templates);
                 assert_eq!(metric.one_mismatch_matches, 0);
@@ -1515,15 +1515,15 @@ s2,CCC,GGG"#;
         // One for each barcode and one for undetermined barcodes
         assert_eq!(per_sample_metrics.len(), 3);
 
-        assert_eq!(per_sample_metrics[0].barcode_name, "s1");
+        assert_eq!(per_sample_metrics[0].sample_id, "s1");
         assert_eq!(per_sample_metrics[0].barcode, "TTT+AAA");
         assert_eq!(per_sample_metrics[0].templates, 1);
 
-        assert_eq!(per_sample_metrics[1].barcode_name, "s2");
+        assert_eq!(per_sample_metrics[1].sample_id, "s2");
         assert_eq!(per_sample_metrics[1].barcode, "CCC+GGG");
         assert_eq!(per_sample_metrics[1].templates, 0);
 
-        assert_eq!(per_sample_metrics[2].barcode_name, "Undetermined");
+        assert_eq!(per_sample_metrics[2].sample_id, "Undetermined");
         assert_eq!(per_sample_metrics[2].barcode, "NNNNNN");
         assert_eq!(per_sample_metrics[2].templates, 0);
 
@@ -1584,11 +1584,11 @@ s1,CCC,"#;
         // One for each barcode and one for undetermined barcodes
         assert_eq!(per_sample_metrics.len(), 2);
 
-        assert_eq!(per_sample_metrics[0].barcode_name, "s1");
+        assert_eq!(per_sample_metrics[0].sample_id, "s1");
         assert_eq!(per_sample_metrics[0].barcode, "CCC");
         assert_eq!(per_sample_metrics[0].templates, 0);
 
-        assert_eq!(per_sample_metrics[1].barcode_name, "Undetermined");
+        assert_eq!(per_sample_metrics[1].sample_id, "Undetermined");
         assert_eq!(per_sample_metrics[1].barcode, "NNN");
         assert_eq!(per_sample_metrics[1].templates, 1);
 
