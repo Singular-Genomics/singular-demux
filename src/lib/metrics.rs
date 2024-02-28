@@ -444,7 +444,7 @@ impl DemuxedGroupSampleMetrics {
         sample_metadata: &SampleMetadata,
     ) -> SampleMetricsProcessed {
         SampleMetricsProcessed {
-            barcode_name: sample_metadata.sample_id.clone(),
+            sample_id: sample_metadata.sample_id.clone(),
             barcode: sample_metadata.get_semantic_barcode().to_string(),
             templates: self.total_matches,
             perfect_matches: self.perfect_matches,
@@ -694,9 +694,11 @@ impl BarcodeCount {
 
 /// The final result of aggregating the [`DemuxedGroupSampleMetrics`] and computing metrics from raw counts.
 #[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Default))]
 pub struct SampleMetricsProcessed {
     /// The name for the sample barcode, typically the same name from the SampleSheet.
-    pub(crate) barcode_name: String,
+    #[serde(rename = "sample_ID")]
+    pub(crate) sample_id: String,
     /// The sample barcode bases. Dual index barcodes will have two sample barcode sequences delimited by a `+`.
     pub(crate) barcode: String,
     /// The total number of templates matching the given barcode.
@@ -725,4 +727,30 @@ pub struct SampleMetricsProcessed {
     pub(crate) frac_q30_bases: f64,
     /// The mean quality of index bases.
     pub(crate) mean_index_base_quality: f64,
+}
+
+#[cfg(test)]
+mod test {
+    use csv;
+    use super::*;
+
+    // Double check that serde does the right thing to rename cols.
+    #[test]
+    fn test_sample_metrics_col_rename() {
+        // Serialize
+        let metrics = SampleMetricsProcessed::default();
+        let mut writer = csv::WriterBuilder::new()
+            .has_headers(true)
+            .delimiter(b'\t')
+            .from_writer(vec![]);
+        writer.serialize(&metrics).unwrap();
+
+        // Parse the header
+        let data = String::from_utf8(writer.into_inner().unwrap()).unwrap();
+        let lines: Vec<&str> = data.split('\n').collect();
+        let header: Vec<&str> = lines[0].split('\t').collect();
+
+        // Check renamed cols
+        assert_eq!(header[0], "sample_ID");
+    }
 }
