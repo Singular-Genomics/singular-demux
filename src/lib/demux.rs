@@ -548,9 +548,10 @@ where
                 {
                     tracker.check_barcode(&barcode);
                 }
-                // If collection of top unmatched barcodes is in effect, track this barcode
+                // If collection of top unmatched barcodes is in effect, track this
+                // barcode in its **semantic** delimited form
                 if let Some(ref mut unmatched) = demuxed_group.unmatched {
-                    unmatched.push(barcode);
+                    unmatched.push(delim.clone());
                 }
             }
 
