@@ -1436,7 +1436,7 @@ s2,CCC,AAA"#;
         let sample_sheet = SampleSheet::from_path(opts).unwrap();
         run(sample_sheet.opts).unwrap();
 
-        // Check metrics
+        // Check hop metrics, should contain one hopped barcode
         let hop_metrics = output.join("sample_barcode_hop_metrics.tsv");
 
         let delim = DelimFile::default();
@@ -1444,6 +1444,15 @@ s2,CCC,AAA"#;
         assert_eq!(hop_metrics.len(), 1);
         assert_eq!(hop_metrics[0].barcode, "TTT+AAA");
         assert_eq!(hop_metrics[0].count, 1);
+
+        // Check unmatched metric, should contain the one hopped barcode
+        let unmatched_metrics = output.join("most_frequent_unmatched.tsv");
+
+        let delim = DelimFile::default();
+        let unmatched_metrics: Vec<BarcodeCount> = delim.read_tsv(&unmatched_metrics).unwrap();
+        assert_eq!(unmatched_metrics.len(), 1);
+        assert_eq!(unmatched_metrics[0].barcode, "TTT+AAA");
+        assert_eq!(unmatched_metrics[0].count, 1);
     }
 
     #[rstest]
@@ -1502,7 +1511,7 @@ s2,CCC,GGG"#;
         let sample_sheet = SampleSheet::from_path(opts).unwrap();
         run(sample_sheet.opts).unwrap();
 
-        // Check metrics
+        // Check per-sample metrics
         let per_sample_metrics = output.join("per_sample_metrics.tsv");
         let delim = DelimFile::default();
         let per_sample_metrics: Vec<SampleMetricsProcessed> =
@@ -1522,5 +1531,81 @@ s2,CCC,GGG"#;
         assert_eq!(per_sample_metrics[2].barcode_name, "Undetermined");
         assert_eq!(per_sample_metrics[2].barcode, "NNNNNN");
         assert_eq!(per_sample_metrics[2].templates, 0);
+
+        // Check unmatched batcode metrics, should be empty
+        let unmatched_metrics = output.join("most_frequent_unmatched.tsv");
+        let delim = DelimFile::default();
+        let unmatched_metrics: Vec<BarcodeCount> = delim.read_tsv(&unmatched_metrics).unwrap();
+        assert_eq!(unmatched_metrics.len(), 0);
+    }
+
+    #[rstest]
+    #[allow(clippy::too_many_lines)]
+    fn test_single_index_nomatch_sample_metrics() {
+        let dir = tempfile::tempdir().unwrap();
+        let fastq = dir.path().join(format!("r1.fastq.gz"));
+        let read_structures = vec![
+            ReadStructure::from_str("3B+T").unwrap(), // 6bp UMI then template
+        ];
+
+        let r1 = Fq {
+            name: "q1",
+            bases: b"TTTCCC", //
+            quals: Some(b"IIICCC"),
+            ..Fq::default()
+        };
+        write_reads_to_file(std::iter::once(r1.to_owned_record()), &fastq);
+
+        let output = dir.path().join("output");
+        create_dir(&output).unwrap();
+
+        // Reads map to s1
+        let metadata = dir.path().join("samples.csv");
+        let metadata_txt = r#"[Demux]
+[Data]
+Sample_ID,Index1_Sequence,Index2_Sequence
+s1,CCC,"#;
+
+        std::fs::write(&metadata, metadata_txt).expect("Failed to write sample metadata.");
+
+        let opts = Opts {
+            fastqs: vec![fastq],
+            output_dir: output.clone(),
+            sample_metadata: metadata,
+            read_structures,
+            output_types: "TB".to_owned(),
+            ..Opts::default()
+        };
+
+        let sample_sheet = SampleSheet::from_path(opts).unwrap();
+        run(sample_sheet.opts).unwrap();
+
+        // Check per-sample metrics
+        let per_sample_metrics = output.join("per_sample_metrics.tsv");
+        let delim = DelimFile::default();
+        let per_sample_metrics: Vec<SampleMetricsProcessed> =
+            delim.read_tsv(&per_sample_metrics).unwrap();
+
+        // One for each barcode and one for undetermined barcodes
+        assert_eq!(per_sample_metrics.len(), 2);
+
+        assert_eq!(per_sample_metrics[0].barcode_name, "s1");
+        assert_eq!(per_sample_metrics[0].barcode, "CCC");
+        assert_eq!(per_sample_metrics[0].templates, 0);
+
+        assert_eq!(per_sample_metrics[1].barcode_name, "Undetermined");
+        assert_eq!(per_sample_metrics[1].barcode, "NNN");
+        assert_eq!(per_sample_metrics[1].templates, 1);
+
+        // Check unmatched batcode metrics, should be empty
+        let unmatched_metrics = output.join("most_frequent_unmatched.tsv");
+        let delim = DelimFile::default();
+        let unmatched_metrics: Vec<BarcodeCount> = delim.read_tsv(&unmatched_metrics).unwrap();
+        assert_eq!(unmatched_metrics.len(), 1);
+        assert_eq!(unmatched_metrics[0].barcode, "TTT");
+
+        // make sure that hop metrics does not exist
+        let hop_metrics = output.join("sample_barcode_hop_metrics.tsv");
+        assert!(!hop_metrics.is_file());
     }
 }
