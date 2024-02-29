@@ -370,12 +370,19 @@ impl<'a> DemuxedGroupMetrics<'a> {
             let filename =
                 [prefix.to_string(), "sample_barcode_hop_metrics.tsv".to_string()].concat();
             let output_path = output_dir.as_ref().join(filename);
+
+            let b1_len = sample_barcode_hop_tracker.checker.index1_length;
             delim.write_tsv(
                 &output_path,
                 sample_barcode_hop_tracker
                     .count_tracker
                     .into_iter()
-                    .map(|(barcode, count)| BarcodeCount::new(barcode.into(), count as isize))
+                    .map(|(barcode, count)| {
+                        let b1 = BString::from(&barcode[..b1_len]);
+                        let b2 = BString::from(&barcode[b1_len..]);
+                        let barcode = BString::from(format!("{}+{}", b1, b2));
+                        BarcodeCount::new(barcode, count as isize)
+                    })
                     .sorted_unstable_by_key(|b| -b.count),
             )?;
         }
