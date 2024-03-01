@@ -678,7 +678,7 @@ impl<'a> SampleBarcodeHopTracker<'a> {
 }
 
 /// A helper struct fot serializing and deserializing barcode counts.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct BarcodeCount {
     /// The barcode.
     pub(crate) barcode: String,

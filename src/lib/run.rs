@@ -1442,8 +1442,7 @@ s2,CCC,AAA"#;
         let delim = DelimFile::default();
         let hop_metrics: Vec<BarcodeCount> = delim.read_tsv(&hop_metrics).unwrap();
         assert_eq!(hop_metrics.len(), 1);
-        assert_eq!(hop_metrics[0].barcode, "TTT+AAA");
-        assert_eq!(hop_metrics[0].count, 1);
+        assert_eq!(hop_metrics[0], BarcodeCount { barcode: "TTT+AAA".to_string(), count: 1 });
 
         // Check unmatched metric, should contain the one hopped barcode
         let unmatched_metrics = output.join("most_frequent_unmatched.tsv");
@@ -1451,8 +1450,7 @@ s2,CCC,AAA"#;
         let delim = DelimFile::default();
         let unmatched_metrics: Vec<BarcodeCount> = delim.read_tsv(&unmatched_metrics).unwrap();
         assert_eq!(unmatched_metrics.len(), 1);
-        assert_eq!(unmatched_metrics[0].barcode, "TTT+AAA");
-        assert_eq!(unmatched_metrics[0].count, 1);
+        assert_eq!(unmatched_metrics[0], BarcodeCount { barcode: "TTT+AAA".to_string(), count: 1 });
     }
 
     #[rstest]
@@ -1602,7 +1600,7 @@ s1,CCC,"#;
         let delim = DelimFile::default();
         let unmatched_metrics: Vec<BarcodeCount> = delim.read_tsv(&unmatched_metrics).unwrap();
         assert_eq!(unmatched_metrics.len(), 1);
-        assert_eq!(unmatched_metrics[0].barcode, "TTT");
+        assert_eq!(unmatched_metrics[0], BarcodeCount { barcode: "TTT".to_string(), count: 1 });
 
         // make sure that hop metrics does not exist
         let hop_metrics = output.join("sample_barcode_hop_metrics.tsv");
