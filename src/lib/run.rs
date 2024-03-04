@@ -1536,6 +1536,90 @@ s2,CCC,GGG"#;
 
     #[rstest]
     #[allow(clippy::too_many_lines)]
+    fn test_multi_multi_index_sample_metrics() {
+        let dir = tempfile::tempdir().unwrap();
+        let fastqs = vec!["r1", "r2"]
+            .into_iter()
+            .map(|name| dir.path().join(format!("{}.fastq.gz", name)))
+            .collect_vec();
+
+        let read_structures = vec![
+            ReadStructure::from_str("1B2B+T").unwrap(),
+            ReadStructure::from_str("3B+T").unwrap(),
+        ];
+
+        let r1 = Fq {
+            name: "q1",
+            bases: b"TTTCCC", //
+            quals: Some(b"IIICCC"),
+            ..Fq::default()
+        };
+        let r2 = Fq {
+            name: "q2",
+            bases: b"AAACCC", //
+            quals: Some(b"IIICCC"),
+            ..Fq::default()
+        };
+
+        for (fastq, read) in fastqs.iter().zip(vec![r1, r2].iter()) {
+            write_reads_to_file(std::iter::once(read.to_owned_record()), fastq);
+        }
+
+        let output = dir.path().join("output");
+        create_dir(&output).unwrap();
+
+        // Reads map to s1
+        let metadata = dir.path().join("samples.csv");
+        let metadata_txt = r#"[Demux]
+[Data]
+Sample_ID,Index1_Sequence,Index2_Sequence
+s1,T-TT,AAA
+s2,C+CC,GGG"#;
+
+        std::fs::write(&metadata, metadata_txt).expect("Failed to write sample metadata.");
+
+        let opts = Opts {
+            fastqs,
+            output_dir: output.clone(),
+            sample_metadata: metadata,
+            read_structures,
+            output_types: "TB".to_owned(),
+            ..Opts::default()
+        };
+
+        let sample_sheet = SampleSheet::from_path(opts).unwrap();
+        run(sample_sheet.opts).unwrap();
+
+        // Check per-sample metrics
+        let per_sample_metrics = output.join("per_sample_metrics.tsv");
+        let delim = DelimFile::default();
+        let per_sample_metrics: Vec<SampleMetricsProcessed> =
+            delim.read_tsv(&per_sample_metrics).unwrap();
+
+        // One for each barcode and one for undetermined barcodes
+        assert_eq!(per_sample_metrics.len(), 3);
+
+        assert_eq!(per_sample_metrics[0].sample_id, "s1");
+        assert_eq!(per_sample_metrics[0].barcode, "T-TT+AAA");
+        assert_eq!(per_sample_metrics[0].total_matches, 1);
+
+        assert_eq!(per_sample_metrics[1].sample_id, "s2");
+        assert_eq!(per_sample_metrics[1].barcode, "C+CC+GGG");
+        assert_eq!(per_sample_metrics[1].total_matches, 0);
+
+        assert_eq!(per_sample_metrics[2].sample_id, "Undetermined");
+        assert_eq!(per_sample_metrics[2].barcode, "NNNNNN");
+        assert_eq!(per_sample_metrics[2].total_matches, 0);
+
+        // Check unmatched batcode metrics, should be empty
+        let unmatched_metrics = output.join("most_frequent_unmatched.tsv");
+        let delim = DelimFile::default();
+        let unmatched_metrics: Vec<BarcodeCount> = delim.read_tsv(&unmatched_metrics).unwrap();
+        assert_eq!(unmatched_metrics.len(), 0);
+    }
+
+    #[rstest]
+    #[allow(clippy::too_many_lines)]
     fn test_single_index_nomatch_sample_metrics() {
         let dir = tempfile::tempdir().unwrap();
         let fastq = dir.path().join(format!("r1.fastq.gz"));
